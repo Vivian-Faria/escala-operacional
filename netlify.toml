@@ -1,0 +1,3 @@
+# Site estático: não há etapa de build
+[build]
+  publish = "."
