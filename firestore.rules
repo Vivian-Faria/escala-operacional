@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Troque pelo mesmo e-mail que está em js/firebase-config.js (ADMIN_EMAIL)
+    // Troque pelo mesmo e-mail que está em firebase-config.js (ADMIN_EMAIL)
     function ehAdmin() {
       return request.auth != null
         && request.auth.token.email == "admin@suaempresa.com.br";

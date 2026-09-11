@@ -16,13 +16,13 @@ Os dados ficam no Firebase (Firestore). O site é 100% estático e roda no Netli
 1. Acesse https://console.firebase.google.com e clique em **Adicionar projeto** (pode desativar o Google Analytics).
 2. No menu, abra **Firestore Database → Criar banco de dados**. Escolha o **modo de produção** e a região `southamerica-east1 (São Paulo)`.
 3. Vá em **Configurações do projeto (engrenagem) → Seus apps → ícone `</>`** para registrar um app da Web. Copie os valores do `firebaseConfig`.
-4. Cole esses valores no arquivo **`js/firebase-config.js`**.
+4. Cole esses valores no arquivo **`firebase-config.js`**.
 
 ## 2. Criar o login de administrador
 
 1. No menu, abra **Authentication → Começar → E-mail/senha** e ative.
 2. Na aba **Users**, clique em **Adicionar usuário**. Use um e-mail seu e a senha que você vai digitar na página de Cadastros.
-3. Coloque esse mesmo e-mail em `ADMIN_EMAIL` dentro de **`js/firebase-config.js`**.
+3. Coloque esse mesmo e-mail em `ADMIN_EMAIL` dentro de **`firebase-config.js`**.
 4. (Recomendado) Em **Authentication → Configurações → Ações do usuário**, desative a criação de contas, para ninguém criar outro usuário.
 
 ## 3. Publicar as regras de segurança
@@ -34,7 +34,7 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 ## 4. Subir no GitHub e no Netlify
 
-1. Crie um repositório no GitHub e envie todos os arquivos desta pasta (mantendo as pastas `css/` e `js/`).
+1. No repositório do GitHub, clique em **Add file → Upload files**, selecione todos os arquivos de uma vez e confirme.
 2. No Netlify: **Add new site → Import an existing project → GitHub** e escolha o repositório.
 3. Deixe **Build command** vazio e **Publish directory** como `.` (o `netlify.toml` já faz isso).
 4. Após o deploy, se o login mostrar erro de domínio, adicione o endereço `seusite.netlify.app` em **Authentication → Configurações → Domínios autorizados**.
@@ -64,17 +64,19 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 ### Arquivos
 
+Todos ficam soltos na raiz do repositório (sem pastas):
+
 ```
-index.html            página 2 — escala dos supervisores
-cadastros.html        página 1 — cadastros (com senha)
-css/style.css
-js/firebase-config.js ← único arquivo que você precisa editar
-js/db.js              leitura e gravação no Firestore
-js/auth.js            login do administrador
-js/feriados.js        feriados nacionais e datas comemorativas
-js/escala.js          lógica da página 2
-js/cadastros.js       lógica da página 1
-js/utils.js
-firestore.rules       regras de segurança (colar no Firebase)
+index.html          página 2 — escala dos supervisores
+cadastros.html      página 1 — cadastros (com senha)
+style.css
+firebase-config.js  ← único arquivo que você precisa editar
+db.js               leitura e gravação no Firestore
+auth.js             login do administrador
+feriados.js         feriados nacionais e datas comemorativas
+escala.js           lógica da página 2
+cadastros.js        lógica da página 1
+utils.js
+firestore.rules     regras de segurança (colar no Firebase)
 netlify.toml
 ```
