@@ -7,12 +7,12 @@
 // ============================================================
 
 export const firebaseConfig = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI"
+  apiKey: "AIzaSyCJ2FIH8OHrc6TOAUYIZ03JffGwRM7AV2w",
+  authDomain: "escalas-operacional-orion.firebaseapp.com",
+  projectId: "escalas-operacional-orion",
+  storageBucket: "escalas-operacional-orion.firebasestorage.app",
+  messagingSenderId: "177727321086",
+  appId: "1:177727321086:web:c000db0f411ce0eb6e06af"
 };
 
 export const ADMIN_EMAIL = "admin@suaempresa.com.br";
