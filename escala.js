@@ -463,7 +463,28 @@ function renderSemana() {
   el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim));
 }
 
-// Um quadradinho por vaga, agrupado por turno: cheio = coberta, vermelho = descoberta
+// Quem está escalado em cada turno, para a visão mensal.
+// Vaga descoberta aparece em vermelho, na posição em que está.
+function htmlEscalados(d) {
+  const iso = isoDate(d);
+  const dow = d.getDay();
+  const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
+  if (!turnos.length) return '';
+  const soUmTurno = turnos.length === 1;
+  return `<span class="nomes">${turnos.map((t) => {
+    const vagas = situacaoVagas(iso, t, dow);
+    const nomes = vagas.filter((v) => v.coberta)
+      .map((v) => `<span class="n-ok${v.tipo === 'freelancer' ? ' freela' : ''}">${escapeHtml(v.nome)}</span>`).join('');
+    const furos = vagas.length - vagas.filter((v) => v.coberta).length;
+    return `<span class="nomes-turno">
+      ${soUmTurno ? '' : `<span class="nt-rot">${escapeHtml(t.nome)}</span>`}
+      <span class="nt-lista">${nomes}${furos
+        ? `<span class="n-furo">${plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
+    </span>`;
+  }).join('')}</span>`;
+}
+
+// Versão compacta para o celular: um quadradinho por vaga, agrupado por turno
 function htmlPontos(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
@@ -496,14 +517,17 @@ function renderMes() {
         ${c.descobertas ? `<span class="cel-furo" aria-hidden="true">${c.descobertas}</span>` : ''}
       </span>
       ${marcos.length ? `<span class="cel-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
+      ${htmlEscalados(d)}
       ${htmlPontos(d)}
-      ${c.total ? `<span class="cel-cont">${c.descobertas ? plural(c.descobertas, 'descoberta', 'descobertas') : 'Completo'}</span>` : ''}
     </button>`;
   }
   el.quadro.className = 'quadro-mes';
   el.quadro.innerHTML = `<div class="mes-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
     <div class="mes-grade">${celulas}</div>
-    <p class="mes-legenda"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</p>`;
+    <p class="mes-legenda">
+      <span class="leg-nomes">Nomes em cinza são freelancers. Toque num dia para lançar a escala.</span>
+      <span class="leg-pontos"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</span>
+    </p>`;
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
   const mesAtual = hoje.slice(0, 7) === isoDate(primeiro).slice(0, 7);
   el.resumo.innerHTML = htmlResumo(tot, mesAtual);

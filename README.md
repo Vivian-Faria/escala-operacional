@@ -50,7 +50,8 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 | O quê | Onde |
 |---|---|
-| Vaga descoberta | Destacada em vermelho, com contagem no dia, no mês (um quadradinho por vaga) e no resumo do período |
+| Vaga descoberta | Destacada em vermelho, com contagem no dia, no mês e no resumo do período |
+| Visão do mês | No computador, cada dia mostra os nomes escalados por turno e quantas vagas seguem descobertas; no celular, um quadradinho por vaga |
 | Fixo ou freelancer | Perguntado para cada nome lançado; muda para "não confirmado" se o nome for trocado |
 | Folgas e faltas | Campo em cada turno de cada dia; o botão "Faltou" no nome escalado lança a falta e a vaga volta a contar como descoberta |
 | Celular | Faixa com os 7 dias no topo e um dia aberto por vez |
