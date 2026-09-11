@@ -475,9 +475,11 @@ function htmlEscalados(d) {
     const vagas = situacaoVagas(iso, t, dow);
     const nomes = vagas.filter((v) => v.coberta)
       .map((v) => `<span class="n-ok${v.tipo === 'freelancer' ? ' freela' : ''}">${escapeHtml(v.nome)}</span>`).join('');
-    const furos = vagas.length - vagas.filter((v) => v.coberta).length;
-    return `<span class="nomes-turno">
-      ${soUmTurno ? '' : `<span class="nt-rot">${escapeHtml(t.nome)}</span>`}
+    const furos = vagas.filter((v) => !v.coberta).length;
+    const cobertas = vagas.length - furos;
+    return `<span class="nomes-turno faixa-${faixaDoDia(t.inicio)}">
+      ${soUmTurno ? '' : `<span class="nt-rot"><span class="nt-nome">${escapeHtml(t.nome)}</span>
+        <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${cobertas}/${vagas.length}</span></span>`}
       <span class="nt-lista">${nomes}${furos
         ? `<span class="n-furo">${plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
     </span>`;
@@ -514,7 +516,8 @@ function renderMes() {
     celulas += `<button type="button" class="${classesDia('cel', iso, hoje, marcos, c)}" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
       <span class="cel-topo">
         <span class="cel-num">${d.getDate()}</span>
-        ${c.descobertas ? `<span class="cel-furo" aria-hidden="true">${c.descobertas}</span>` : ''}
+        ${c.descobertas ? `<span class="cel-furo" aria-hidden="true">${c.descobertas}</span>`
+          : c.total ? '<span class="cel-ok" aria-hidden="true">Completo</span>' : ''}
       </span>
       ${marcos.length ? `<span class="cel-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
       ${htmlEscalados(d)}
