@@ -1,9 +1,7 @@
 // ============================================================
-//  CONFIGURAÇÃO DO FIREBASE
-//  1) Console do Firebase → Configurações do projeto → Seus apps → App da Web
-//     Copie os valores do objeto firebaseConfig e cole abaixo.
-//  2) Troque ADMIN_EMAIL pelo e-mail do usuário administrador que você
-//     criar em Authentication → Users. Use o mesmo e-mail no firestore.rules.
+//  CONFIGURAÇÃO DO FIREBASE — projeto escalas-operacional-orion
+//  ADMIN_EMAIL precisa ser o mesmo usuário criado em Authentication
+//  e o mesmo e-mail que está no firestore.rules.
 // ============================================================
 
 export const firebaseConfig = {
@@ -15,4 +13,4 @@ export const firebaseConfig = {
   appId: "1:177727321086:web:c000db0f411ce0eb6e06af"
 };
 
-export const ADMIN_EMAIL = "admin@suaempresa.com.br";
+export const ADMIN_EMAIL = "vivian@orioncloudkitchens.com.br";
