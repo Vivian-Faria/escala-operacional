@@ -1,5 +1,5 @@
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
-import { configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, alterarFolga } from './db.js';
+import { configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia } from './db.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
@@ -15,6 +15,9 @@ const el = {
 };
 const mostrarStatus = criarStatus($('#status'));
 
+// Abaixo desta largura (celular e tablet) a semana mostra um dia por vez
+const TELA_COMPACTA = matchMedia('(max-width: 1099px)');
+
 const params = new URLSearchParams(location.search);
 const estado = {
   cfg: null,
@@ -26,9 +29,8 @@ const estado = {
   escalasProntas: false,
   cancelar: null,
   chaveFaixa: '',
-  diaAberto: null,
-  rolouHoje: false,
-  expandidos: new Set() // dias passados abertos no celular
+  diaAberto: null,   // dia aberto na janela (visão mensal)
+  diaSel: null       // dia mostrado no celular (visão semanal)
 };
 
 function mostrarAviso(titulo, texto) {
@@ -81,37 +83,48 @@ const hojeIso = () => isoDate(new Date());
 const docDia = (iso, hubId = estado.hubId) => estado.escalas[`${hubId}_${iso}`];
 const vagasNoDia = (t, dow) => Number(t.vagas?.[dow]) || 0;
 const turnoPorId = (id) => estado.cfg.turnos.find((t) => t.id === id);
-const vagasDoTurno = (iso, turnoId) => vagasDe(docDia(iso)?.slots?.[turnoId]);
-const folgasDoTurno = (iso, turnoId) => docDia(iso)?.folgas?.[turnoId] || [];
+const vagasSalvas = (iso, turnoId) => vagasDe(docDia(iso)?.slots?.[turnoId]);
+const listaDoTurno = (iso, campo, turnoId) => docDia(iso)?.[campo]?.[turnoId] || [];
 const nomeSupervisor = () => estado.cfg.supervisores.find((s) => s.id === estado.supId)?.nome || '';
+const turnosDoHub = () => estado.cfg.turnos.filter((t) => t.hubId === estado.hubId);
+
+// Situação de cada vaga cadastrada de um turno naquele dia.
+// Quem está escalado e faltou deixa a vaga descoberta.
+function situacaoVagas(iso, t, dow) {
+  const salvas = vagasSalvas(iso, t.id);
+  const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
+  return Array.from({ length: vagasNoDia(t, dow) }, (_, i) => {
+    const v = salvas[i] || { nome: '', tipo: '' };
+    const temNome = Boolean(v.nome.trim());
+    const faltou = temNome && faltas.has(normalizaNome(v.nome));
+    return { ...v, faltou, coberta: temNome && !faltou };
+  });
+}
 
 function turnosDoDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
-  return ordenaTurnos(estado.cfg.turnos.filter((t) => t.hubId === estado.hubId && (
-    vagasNoDia(t, dow) > 0
-    || vagasDoTurno(iso, t.id).some((v) => v.nome.trim())
-    || folgasDoTurno(iso, t.id).length > 0
-  )));
+  return ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0
+    || vagasSalvas(iso, t.id).some((v) => v.nome.trim())
+    || listaDoTurno(iso, 'folgas', t.id).length
+    || listaDoTurno(iso, 'faltas', t.id).length));
 }
 
 function contagemDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
-  const c = { total: 0, preench: 0, descobertas: 0, pendentes: 0, freelas: 0 };
-  for (const t of estado.cfg.turnos) {
-    if (t.hubId !== estado.hubId) continue;
-    const n = vagasNoDia(t, dow);
-    if (!n) continue;
-    c.total += n;
-    for (const v of vagasDoTurno(iso, t.id).slice(0, n)) {
-      if (!v.nome.trim()) continue;
-      c.preench++;
+  const c = { total: 0, cobertas: 0, descobertas: 0, pendentes: 0, freelas: 0, faltas: 0 };
+  for (const t of turnosDoHub()) {
+    c.faltas += listaDoTurno(iso, 'faltas', t.id).length;
+    for (const v of situacaoVagas(iso, t, dow)) {
+      c.total++;
+      if (!v.coberta) continue;
+      c.cobertas++;
       if (!v.tipo) c.pendentes++;
       if (v.tipo === 'freelancer') c.freelas++;
     }
   }
-  c.descobertas = c.total - c.preench;
+  c.descobertas = c.total - c.cobertas;
   return c;
 }
 
@@ -162,7 +175,7 @@ function alertasVaga(ind, turno, idx, nome) {
 function alertaFolga(ind, turno, nome) {
   const norm = normalizaNome(nome);
   const esc = ind.escalados.filter((e) => e.norm === norm && sobrepoe(e.turno, turno));
-  return esc.length ? `${limparNome(nome)} está escalado em ${esc.map(onde).join('; ')}` : '';
+  return esc.length ? `${limparNome(nome)} está de folga, mas escalado em ${esc.map(onde).join('; ')}` : '';
 }
 
 // ================= seletores =================
@@ -221,7 +234,7 @@ function render() {
     return mostrarAviso('Escolha seu nome e o hub',
       'A escala da unidade aparece aqui, com as vagas de cada turno para você preencher.');
   }
-  if (!estado.cfg.turnos.some((t) => t.hubId === estado.hubId)) {
+  if (!turnosDoHub().length) {
     return mostrarAviso('Este hub ainda não tem turnos',
       'Os turnos e a quantidade de vagas são definidos em <a href="cadastros.html">Cadastros</a>.');
   }
@@ -229,21 +242,13 @@ function render() {
   el.painel.hidden = false;
 
   const foco = capturarFoco();
-  const rolagem = el.quadro.scrollLeft;
   if (estado.modo === 'semana') renderSemana(); else renderMes();
-  el.quadro.scrollLeft = rolagem;
   if (estado.diaAberto) renderDialogo();
   restaurarFoco(foco);
 
   document.querySelectorAll('.alternador button').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.modo === estado.modo));
   });
-
-  // Na primeira vez, rola o quadro da semana até o dia de hoje (telas largas)
-  if (estado.modo === 'semana' && !estado.rolouHoje) {
-    const hoje = el.quadro.querySelector('.dia.hoje');
-    if (hoje) { el.quadro.scrollLeft = hoje.offsetLeft - 1; estado.rolouHoje = true; }
-  }
 }
 
 function tipoPrincipal(marcos) {
@@ -258,59 +263,69 @@ function htmlMarcos(marcos) {
 }
 
 function medidor(c) {
-  const pct = c.total ? Math.round((Math.min(c.preench, c.total) / c.total) * 100) : 0;
-  const cls = c.preench >= c.total ? 'completo' : '';
+  const pct = c.total ? Math.round((c.cobertas / c.total) * 100) : 0;
+  const cls = c.cobertas >= c.total ? 'completo' : '';
   return `<span class="medidor ${cls}" aria-hidden="true"><span style="width:${pct}%"></span></span>`;
 }
 
-function htmlContDia(c, passado) {
-  const fracao = `<span class="dia-fracao">${c.preench}/${c.total}</span>`;
+function htmlContDia(c) {
+  const fracao = `<span class="dia-fracao">${c.cobertas}/${c.total}</span>`;
   if (!c.descobertas) return `${fracao}<span class="selo selo-ok">Completo</span>`;
-  return `${fracao}<span class="selo ${passado ? 'selo-passado' : 'selo-falta'}">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
+  return `${fracao}<span class="selo selo-furo">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
 }
 
 function htmlVaga(iso, t, i, v, alertas, travado, rotDia) {
   const chave = `${iso}|${t.id}|${i}`;
-  const ocupada = Boolean(v.nome.trim());
-  const cls = ['vaga', ocupada ? 'ocupada' : 'descoberta', alertas.length ? 'conflito' : '',
-    ocupada && !v.tipo ? 'pendente' : ''].filter(Boolean).join(' ');
+  const temNome = Boolean(v.nome.trim());
+  const situacao = v.faltou ? 'faltou' : temNome ? 'ocupada' : 'descoberta';
+  const cls = ['vaga', situacao, alertas.length ? 'conflito' : '',
+    v.coberta && !v.tipo ? 'pendente' : ''].filter(Boolean).join(' ');
   const dis = travado ? 'disabled' : '';
-  const tipo = ocupada ? `
-    <div class="tipo" role="group" aria-label="${escapeHtml(v.nome)} é fixo ou freelancer?">
-      ${v.tipo ? '' : '<span class="tipo-pergunta">Fixo ou freelancer?</span>'}
+  const acoes = temNome ? `
+    <div class="tipo" role="group" aria-label="${escapeHtml(v.nome)}">
+      ${v.coberta && !v.tipo ? '<span class="tipo-pergunta">Fixo ou freelancer?</span>' : ''}
       <button type="button" data-tipo-vaga="${chave}" data-valor="fixo" aria-pressed="${v.tipo === 'fixo'}" ${dis}>Fixo</button>
-      <button type="button" data-tipo-vaga="${chave}" data-valor="freelancer" aria-pressed="${v.tipo === 'freelancer'}" ${dis}>Freelancer</button>
+      <button type="button" data-tipo-vaga="${chave}" data-valor="freelancer" aria-pressed="${v.tipo === 'freelancer'}" aria-label="Freelancer" ${dis}>Freela</button>
+      <button type="button" class="btn-faltou" data-faltou="${iso}|${t.id}" data-nome="${escapeHtml(v.nome)}" aria-pressed="${v.faltou}" ${dis}>Faltou</button>
     </div>` : '';
   return `<div class="${cls}">
-    <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false"
+    <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
       value="${escapeHtml(v.nome)}" placeholder="Descoberta"
       aria-label="${escapeHtml(t.nome)}, vaga ${i + 1}, ${rotDia}"
       data-chave="${chave}" data-foco="v|${chave}" ${dis}>
-    ${tipo}
+    ${v.faltou ? '<p class="vaga-furo">Faltou. A vaga está descoberta.</p>' : ''}
+    ${acoes}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
   </div>`;
 }
 
-function htmlFolgas(iso, t, ind, travado, rotDia) {
-  const folgas = folgasDoTurno(iso, t.id);
+function htmlAusencias(iso, t, ind, travado, rotDia) {
+  const folgas = listaDoTurno(iso, 'folgas', t.id);
+  const faltas = listaDoTurno(iso, 'faltas', t.id);
   const dis = travado ? 'disabled' : '';
   const alertas = [];
-  const chips = folgas.map((nome) => {
-    const a = alertaFolga(ind, t, nome);
+  const chip = (nome, campo) => {
+    const a = campo === 'folgas' ? alertaFolga(ind, t, nome) : '';
     if (a) alertas.push(a);
-    return `<li class="folga${a ? ' conflito' : ''}">
-      <span>${escapeHtml(nome)}</span>
-      <button type="button" data-tirar-folga="${iso}|${t.id}" data-nome="${escapeHtml(nome)}"
-        aria-label="Tirar ${escapeHtml(nome)} das folgas" ${dis}>×</button>
+    return `<li class="aus aus-${campo}${a ? ' conflito' : ''}">
+      <span class="aus-tipo">${campo === 'folgas' ? 'Folga' : 'Falta'}</span>
+      <span class="aus-nome">${escapeHtml(nome)}</span>
+      <button type="button" data-remover-aus="${campo}|${iso}|${t.id}" data-nome="${escapeHtml(nome)}"
+        aria-label="Retirar ${campo === 'folgas' ? 'folga' : 'falta'} de ${escapeHtml(nome)}" ${dis}>×</button>
     </li>`;
-  }).join('');
-  return `<div class="folgas">
-    <p class="folgas-rot">Folgas${folgas.length ? ` (${folgas.length})` : ''}</p>
-    ${folgas.length ? `<ul class="folgas-lista">${chips}</ul>` : ''}
+  };
+  const total = folgas.length + faltas.length;
+  return `<div class="ausencias">
+    <p class="aus-rot">Folgas e faltas${total ? ` (${total})` : ''}</p>
+    ${total ? `<ul class="aus-lista">${faltas.map((n) => chip(n, 'faltas')).join('')}${folgas.map((n) => chip(n, 'folgas')).join('')}</ul>` : ''}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
-    <input type="text" class="folga-input" list="listaColaboradores" autocomplete="off" spellcheck="false"
-      placeholder="Adicionar folga" aria-label="Adicionar folga em ${escapeHtml(t.nome)}, ${rotDia}"
-      data-folga="${iso}|${t.id}" data-foco="f|${iso}|${t.id}" ${dis}>
+    <div class="aus-add">
+      <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="done"
+        placeholder="Nome" aria-label="Nome para lançar folga ou falta em ${escapeHtml(t.nome)}, ${rotDia}"
+        data-aus="${iso}|${t.id}" data-foco="a|${iso}|${t.id}" ${dis}>
+      <button type="button" data-lancar="folgas" ${dis}>Folga</button>
+      <button type="button" data-lancar="faltas" ${dis}>Falta</button>
+    </div>
   </div>`;
 }
 
@@ -325,20 +340,17 @@ function htmlDia(d) {
 
   return turnos.map((t) => {
     const n = vagasNoDia(t, dow);
-    const vagas = vagasDoTurno(iso, t.id);
-    const ocupadas = vagas.slice(0, n).filter((v) => v.nome.trim()).length;
-    let htmlVagas = '';
-    for (let i = 0; i < n; i++) {
-      const v = vagas[i] || { nome: '', tipo: '' };
-      htmlVagas += htmlVaga(iso, t, i, v, alertasVaga(ind, t, i, v.nome), travado, rotDia);
-    }
-    const extras = vagas.map((v, i) => ({ ...v, i })).slice(n).filter((v) => v.nome.trim());
+    const situacao = situacaoVagas(iso, t, dow);
+    const cobertas = situacao.filter((v) => v.coberta).length;
+    const htmlVagas = situacao
+      .map((v, i) => htmlVaga(iso, t, i, v, alertasVaga(ind, t, i, v.nome), travado, rotDia)).join('');
+    const extras = vagasSalvas(iso, t.id).map((v, i) => ({ ...v, i })).slice(n).filter((v) => v.nome.trim());
     const htmlExtras = extras.length ? `<div class="extras">
       <p>Acima das vagas cadastradas</p>
       ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.nome)}</span>
         <button type="button" class="btn-texto" data-liberar="${iso}|${t.id}|${x.i}">Remover</button></div>`).join('')}
     </div>` : '';
-    const cont = n ? `<span class="turno-cont ${ocupadas >= n ? 'completo' : 'incompleto'}">${ocupadas}/${n}</span>` : '';
+    const cont = n ? `<span class="turno-cont ${cobertas >= n ? 'completo' : 'incompleto'}">${cobertas}/${n}</span>` : '';
 
     return `<section class="turno faixa-${faixaDoDia(t.inicio)}">
       <header class="turno-cab">
@@ -348,27 +360,30 @@ function htmlDia(d) {
       </header>
       <div class="vagas">${htmlVagas}</div>
       ${htmlExtras}
-      ${htmlFolgas(iso, t, ind, travado, rotDia)}
+      ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
   }).join('');
 }
 
 function somar(tot, c, futuro) {
   tot.total += c.total;
-  tot.preench += c.preench;
+  tot.cobertas += c.cobertas;
   tot.pendentes += c.pendentes;
   tot.freelas += c.freelas;
+  tot.faltas += c.faltas;
   if (futuro) tot.descobertas += c.descobertas;
 }
+const totalZerado = () => ({ total: 0, cobertas: 0, descobertas: 0, pendentes: 0, freelas: 0, faltas: 0 });
 
 function htmlResumo(tot, incluiHoje) {
   if (!estado.escalasProntas) return 'Carregando escala…';
   if (!tot.total) return 'Nenhuma vaga neste período';
-  let html = `${tot.preench} de ${tot.total} vagas preenchidas`;
+  let html = `<span>${tot.cobertas} de ${tot.total} vagas cobertas</span>`;
   if (tot.descobertas) {
-    html += ` <span class="pilula pilula-falta">${plural(tot.descobertas, 'descoberta', 'descobertas')}${incluiHoje ? ' a partir de hoje' : ''}</span>`;
+    html += ` <span class="pilula pilula-furo">${plural(tot.descobertas, 'descoberta', 'descobertas')}${incluiHoje ? ' a partir de hoje' : ''}</span>`;
   }
-  if (tot.pendentes) html += ` <span class="pilula pilula-pendente">${tot.pendentes} sem confirmar fixo ou freelancer</span>`;
+  if (tot.faltas) html += ` <span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>`;
+  if (tot.pendentes) html += ` <span class="pilula pilula-pendente">${tot.pendentes} sem confirmar fixo ou freela</span>`;
   if (tot.freelas) html += ` <span class="pilula">${plural(tot.freelas, 'freelancer', 'freelancers')}</span>`;
   return html;
 }
@@ -378,75 +393,117 @@ function tituloSemana(ini, fim) {
   return `${ini.getDate()} de ${MESES[ini.getMonth()]} a ${fim.getDate()} de ${MESES[fim.getMonth()]}`;
 }
 
+function classesDia(base, iso, hoje, marcos, c) {
+  return [base, iso === hoje ? 'hoje' : '', iso < hoje ? 'passado' : '',
+    c.descobertas ? 'com-furo' : '', marcos.length ? `tem-${tipoPrincipal(marcos)}` : '']
+    .filter(Boolean).join(' ');
+}
+
 function renderSemana() {
   const { ini, fim } = faixaPeriodo();
   const hoje = hojeIso();
-  const tot = { total: 0, preench: 0, descobertas: 0, pendentes: 0, freelas: 0 };
-  const estreito = matchMedia('(max-width: 760px)').matches;
-  let colunas = '';
-  for (let i = 0; i < 7; i++) {
+  const tot = totalZerado();
+  const dias = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(ini, i);
     const iso = isoDate(d);
     const c = contagemDia(d);
-    const passado = iso < hoje;
-    somar(tot, c, !passado);
-    const marcos = marcosDoDia(iso, estado.cfg.datasEspeciais);
-    // No celular, dias que já passaram ficam recolhidos para o de hoje aparecer logo
-    const recolhivel = estreito && passado;
-    const recolhido = recolhivel && !estado.expandidos.has(iso);
-    const classes = ['dia', iso === hoje ? 'hoje' : '', passado ? 'passado' : '', recolhido ? 'recolhido' : '',
-      marcos.length ? `tem-${tipoPrincipal(marcos)}` : ''].filter(Boolean).join(' ');
-    colunas += `<article class="${classes}">
-      <header class="dia-cab">
-        <span class="dia-num">${d.getDate()}</span>
-        <span class="dia-info">
-          <span class="dia-sem">${DIAS_CURTO[d.getDay()]}${iso === hoje ? ', hoje' : ''}</span>
-          ${c.total ? `<span class="dia-cont">${htmlContDia(c, passado)}</span>` : ''}
-        </span>
-        ${recolhivel ? `<button type="button" class="btn-texto dia-expandir" data-expandir="${iso}" aria-expanded="${!recolhido}">${recolhido ? 'Ver turnos' : 'Ocultar'}</button>` : ''}
-      </header>
-      ${htmlMarcos(marcos)}
-      ${c.total ? medidor(c) : ''}
-      <div class="dia-corpo">${htmlDia(d)}</div>
-    </article>`;
+    somar(tot, c, iso >= hoje);
+    return { d, iso, c, marcos: marcosDoDia(iso, estado.cfg.datasEspeciais) };
+  });
+
+  if (TELA_COMPACTA.matches) {
+    // Celular: faixa com os 7 dias e um dia aberto por vez
+    if (!dias.some((x) => x.iso === estado.diaSel)) {
+      estado.diaSel = dias.some((x) => x.iso === hoje) ? hoje : dias[0].iso;
+    }
+    const faixa = dias.map(({ d, iso, c, marcos }) => {
+      const sel = iso === estado.diaSel;
+      const marca = !c.total ? '' : c.descobertas
+        ? `<span class="cd-marca furo">${c.descobertas}</span>`
+        : '<span class="cd-marca ok" aria-hidden="true">✓</span>';
+      const rot = [`${DIAS_LONGO[d.getDay()]} ${d.getDate()}`, marcos[0] ? marcos[0].nome : '',
+        c.total ? (c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : 'completo') : 'sem turnos']
+        .filter(Boolean).join(', ');
+      return `<button type="button" role="tab" class="${classesDia('chip-dia', iso, hoje, marcos, c)}${sel ? ' sel' : ''}"
+        data-dia="${iso}" aria-selected="${sel}" aria-label="${escapeHtml(rot)}">
+        <span class="cd-sem">${iso === hoje ? 'Hoje' : DIAS_CURTO[d.getDay()]}</span>
+        <span class="cd-num">${d.getDate()}</span>
+        ${marca}
+      </button>`;
+    }).join('');
+    const x = dias.find((y) => y.iso === estado.diaSel);
+    el.quadro.className = 'quadro-dia';
+    el.quadro.innerHTML = `<div class="faixa-dias" role="tablist" aria-label="Dias da semana">${faixa}</div>
+      <article class="${classesDia('dia dia-unico', x.iso, hoje, x.marcos, x.c)}">
+        <header class="dia-cab">
+          <h2 class="dia-titulo">${DIAS_LONGO[x.d.getDay()]}, ${x.d.getDate()} de ${MESES[x.d.getMonth()]}</h2>
+          ${x.c.total ? `<span class="dia-cont">${htmlContDia(x.c)}</span>` : ''}
+        </header>
+        ${htmlMarcos(x.marcos)}
+        ${x.c.total ? medidor(x.c) : ''}
+        <div class="dia-corpo">${htmlDia(x.d)}</div>
+      </article>`;
+  } else {
+    el.quadro.className = 'quadro-semana';
+    el.quadro.innerHTML = dias.map(({ d, iso, c, marcos }) => `
+      <article class="${classesDia('dia', iso, hoje, marcos, c)}">
+        <header class="dia-cab">
+          <span class="dia-num">${d.getDate()}</span>
+          <span class="dia-info">
+            <span class="dia-sem">${DIAS_CURTO[d.getDay()]}${iso === hoje ? ', hoje' : ''}</span>
+            ${c.total ? `<span class="dia-cont">${htmlContDia(c)}</span>` : ''}
+          </span>
+        </header>
+        ${htmlMarcos(marcos)}
+        ${c.total ? medidor(c) : ''}
+        <div class="dia-corpo">${htmlDia(d)}</div>
+      </article>`).join('');
   }
-  el.quadro.className = 'quadro-semana';
-  el.quadro.innerHTML = colunas;
   el.titulo.textContent = tituloSemana(ini, fim);
   el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim));
+}
+
+// Um quadradinho por vaga, agrupado por turno: cheio = coberta, vermelho = descoberta
+function htmlPontos(d) {
+  const iso = isoDate(d);
+  const dow = d.getDay();
+  const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
+  if (!turnos.length) return '';
+  return `<span class="pontos" aria-hidden="true">${turnos.map((t) => `<span class="pontos-turno">${
+    situacaoVagas(iso, t, dow).map((v) => `<i class="${v.coberta ? 'p-ok' : 'p-furo'}"></i>`).join('')
+  }</span>`).join('')}</span>`;
 }
 
 function renderMes() {
   const { ini, fim, primeiro } = faixaPeriodo();
   const hoje = hojeIso();
-  const tot = { total: 0, preench: 0, descobertas: 0, pendentes: 0, freelas: 0 };
+  const tot = totalZerado();
   let celulas = '';
   for (let d = ini; d <= fim; d = addDays(d, 1)) {
     if (d.getMonth() !== primeiro.getMonth()) { celulas += '<div class="cel fora" aria-hidden="true"></div>'; continue; }
     const iso = isoDate(d);
     const c = contagemDia(d);
-    const passado = iso < hoje;
-    somar(tot, c, !passado);
+    somar(tot, c, iso >= hoje);
     const marcos = marcosDoDia(iso, estado.cfg.datasEspeciais);
-    const falta = c.descobertas && !passado;
-    const classes = ['cel', iso === hoje ? 'hoje' : '', passado ? 'passado' : '', falta ? 'com-falta' : '',
-      marcos.length ? `tem-${tipoPrincipal(marcos)}` : ''].filter(Boolean).join(' ');
     const rotulo = [`${DIAS_LONGO[d.getDay()]}, ${d.getDate()}`,
       ...marcos.map((m) => `${ROTULO_TIPO[m.tipo]}: ${m.nome}`),
-      c.total ? `${c.preench} de ${c.total} vagas preenchidas` : 'sem turnos',
-      falta ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : ''].filter(Boolean).join('. ');
-    celulas += `<button type="button" class="${classes}" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
+      c.total ? `${c.cobertas} de ${c.total} vagas cobertas` : 'sem turnos',
+      c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : '',
+      c.faltas ? plural(c.faltas, 'falta', 'faltas') : ''].filter(Boolean).join('. ');
+    celulas += `<button type="button" class="${classesDia('cel', iso, hoje, marcos, c)}" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
       <span class="cel-topo">
         <span class="cel-num">${d.getDate()}</span>
-        ${falta ? `<span class="cel-falta" aria-hidden="true">${c.descobertas}</span>` : ''}
+        ${c.descobertas ? `<span class="cel-furo" aria-hidden="true">${c.descobertas}</span>` : ''}
       </span>
       ${marcos.length ? `<span class="cel-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
-      ${c.total ? `${medidor(c)}<span class="cel-cont">${c.preench}/${c.total}</span>` : ''}
+      ${htmlPontos(d)}
+      ${c.total ? `<span class="cel-cont">${c.descobertas ? plural(c.descobertas, 'descoberta', 'descobertas') : 'Completo'}</span>` : ''}
     </button>`;
   }
   el.quadro.className = 'quadro-mes';
   el.quadro.innerHTML = `<div class="mes-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
-    <div class="mes-grade">${celulas}</div>`;
+    <div class="mes-grade">${celulas}</div>
+    <p class="mes-legenda"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</p>`;
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
   const mesAtual = hoje.slice(0, 7) === isoDate(primeiro).slice(0, 7);
   el.resumo.innerHTML = htmlResumo(tot, mesAtual);
@@ -465,7 +522,7 @@ function renderDialogo() {
   const marcos = marcosDoDia(estado.diaAberto, estado.cfg.datasEspeciais);
   el.dlgTitulo.textContent = `${DIAS_LONGO[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
   el.dlgCorpo.innerHTML = `${htmlMarcos(marcos)}
-    ${c.total ? `<p class="dlg-resumo">${htmlContDia(c, estado.diaAberto < hojeIso())}</p>` : ''}
+    ${c.total ? `<p class="dlg-resumo">${htmlContDia(c)}</p>` : ''}
     ${htmlDia(d)}`;
 }
 
@@ -485,43 +542,51 @@ function restaurarFoco(f) {
 }
 
 // ================= gravação =================
-async function gravarVaga(iso, turnoId, idx, dados, msgOk) {
+async function gravar(acao, msgOk) {
   mostrarStatus('Salvando…', 'neutro', true);
   try {
-    await salvarVaga(estado.hubId, iso, turnoId, idx, dados, nomeSupervisor());
+    await acao();
     mostrarStatus(msgOk);
   } catch (err) { erroGravacao(err); }
+}
+
+function gravarVaga(iso, turnoId, idx, dados, msgOk) {
+  return gravar(() => salvarVaga(estado.hubId, iso, turnoId, idx, dados, nomeSupervisor()), msgOk);
 }
 
 function salvarNome(input) {
   const [iso, turnoId, idx] = input.dataset.chave.split('|');
   const nome = limparNome(input.value);
   input.value = nome;
-  const atual = vagasDoTurno(iso, turnoId)[Number(idx)] || { nome: '', tipo: '' };
+  const atual = vagasSalvas(iso, turnoId)[Number(idx)] || { nome: '', tipo: '' };
   if (nome === atual.nome) return;
   // Pessoa nova na vaga: o tipo precisa ser confirmado de novo
   gravarVaga(iso, turnoId, Number(idx), { nome, tipo: '' },
     nome ? 'Salvo. Confirme se é fixo ou freelancer.' : 'Vaga liberada');
 }
 
-async function gravarFolga(iso, turnoId, nome, adicionar) {
-  mostrarStatus('Salvando…', 'neutro', true);
-  try {
-    await alterarFolga(estado.hubId, iso, turnoId, nome, adicionar, nomeSupervisor());
-    mostrarStatus(adicionar ? 'Folga lançada' : 'Folga retirada');
-  } catch (err) { erroGravacao(err); }
+// Nome como já está gravado na lista (para retirar exatamente o mesmo texto)
+function nomeNaLista(iso, campo, turnoId, nome) {
+  return listaDoTurno(iso, campo, turnoId).find((x) => normalizaNome(x) === normalizaNome(nome));
 }
 
-function adicionarFolga(input) {
+function lancar(input, campo) {
   const nome = limparNome(input.value);
-  if (!nome) return;
-  const [iso, turnoId] = input.dataset.folga.split('|');
-  input.value = '';
-  if (folgasDoTurno(iso, turnoId).some((f) => normalizaNome(f) === normalizaNome(nome))) {
-    mostrarStatus(`${nome} já está nas folgas deste turno`, 'neutro');
+  const tipo = campo === 'folgas' ? 'folga' : 'falta';
+  if (!nome) {
+    mostrarStatus(`Digite o nome antes de lançar a ${tipo}`, 'neutro');
+    input.focus();
     return;
   }
-  gravarFolga(iso, turnoId, nome, true);
+  const [iso, turnoId] = input.dataset.aus.split('|');
+  input.value = '';
+  if (nomeNaLista(iso, campo, turnoId, nome)) {
+    mostrarStatus(`${nome} já tem ${tipo} lançada neste turno`, 'neutro');
+    return;
+  }
+  const noOutro = nomeNaLista(iso, campo === 'folgas' ? 'faltas' : 'folgas', turnoId, nome);
+  gravar(() => lancarAusencia(estado.hubId, iso, turnoId, noOutro || nome, campo, nomeSupervisor()),
+    `${capitalizar(tipo)} lançada para ${nome}`);
 }
 
 // ================= eventos =================
@@ -533,7 +598,6 @@ el.selSup.addEventListener('change', () => {
 });
 el.selHub.addEventListener('change', () => {
   estado.hubId = el.selHub.value;
-  estado.rolouHoje = false;
   atualizarDatalist();
   atualizarUrl();
   render();
@@ -542,6 +606,7 @@ el.selHub.addEventListener('change', () => {
 function mudarPeriodo(passo) {
   if (estado.modo === 'semana') estado.ref = addDays(estado.ref, passo * 7);
   else estado.ref = new Date(estado.ref.getFullYear(), estado.ref.getMonth() + passo, 1);
+  estado.diaSel = null;
   assinarEscalas();
   render();
 }
@@ -549,10 +614,12 @@ $('#btnAnterior').addEventListener('click', () => mudarPeriodo(-1));
 $('#btnProximo').addEventListener('click', () => mudarPeriodo(1));
 $('#btnHoje').addEventListener('click', () => {
   estado.ref = new Date();
-  estado.rolouHoje = false;
+  estado.diaSel = null;
   assinarEscalas();
   render();
 });
+
+TELA_COMPACTA.addEventListener('change', () => render());
 
 $('#dlgFechar').addEventListener('click', () => el.dlg.close());
 el.dlg.addEventListener('close', () => { estado.diaAberto = null; });
@@ -561,18 +628,18 @@ el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(
 document.addEventListener('input', (e) => {
   const i = e.target;
   if (!i.matches?.('input[data-chave]')) return;
+  const vaga = i.closest('.vaga');
+  if (!vaga || vaga.classList.contains('faltou')) return;
   const tem = Boolean(i.value.trim());
-  i.closest('.vaga')?.classList.toggle('ocupada', tem);
-  i.closest('.vaga')?.classList.toggle('descoberta', !tem);
+  vaga.classList.toggle('ocupada', tem);
+  vaga.classList.toggle('descoberta', !tem);
 });
 
 document.addEventListener('change', (e) => {
-  const i = e.target;
-  if (i.matches?.('input[data-chave]')) salvarNome(i);
-  else if (i.matches?.('input[data-folga]')) adicionarFolga(i);
+  if (e.target.matches?.('input[data-chave]')) salvarNome(e.target);
 });
 
-// Enter: na vaga, pula para a próxima; na folga, adiciona
+// Enter na vaga pula para a próxima
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const i = e.target;
@@ -582,9 +649,9 @@ document.addEventListener('keydown', (e) => {
       .filter((x) => x.offsetParent !== null);
     const prox = campos[campos.indexOf(i) + 1];
     if (prox) prox.focus(); else i.blur();
-  } else if (i.matches?.('input[data-folga]')) {
+  } else if (i.matches?.('input[data-aus]')) {
     e.preventDefault();
-    adicionarFolga(i);
+    i.blur();
   }
 });
 
@@ -596,21 +663,33 @@ document.addEventListener('click', (e) => {
     const [iso, turnoId, idx] = ds.tipoVaga.split('|');
     gravarVaga(iso, turnoId, Number(idx), { tipo: ds.valor },
       ds.valor === 'fixo' ? 'Marcado como fixo' : 'Marcado como freelancer');
-  } else if (ds.tirarFolga) {
-    const [iso, turnoId] = ds.tirarFolga.split('|');
-    gravarFolga(iso, turnoId, ds.nome, false);
+  } else if (ds.faltou) {
+    const [iso, turnoId] = ds.faltou.split('|');
+    const registrado = nomeNaLista(iso, 'faltas', turnoId, ds.nome);
+    if (registrado) {
+      gravar(() => removerAusencia(estado.hubId, iso, turnoId, registrado, 'faltas', nomeSupervisor()), 'Falta retirada');
+    } else {
+      const deFolga = nomeNaLista(iso, 'folgas', turnoId, ds.nome);
+      gravar(() => lancarAusencia(estado.hubId, iso, turnoId, deFolga || ds.nome, 'faltas', nomeSupervisor()),
+        `Falta lançada para ${ds.nome}`);
+    }
+  } else if (ds.lancar) {
+    lancar(b.closest('.aus-add').querySelector('input'), ds.lancar);
+  } else if (ds.removerAus) {
+    const [campo, iso, turnoId] = ds.removerAus.split('|');
+    gravar(() => removerAusencia(estado.hubId, iso, turnoId, ds.nome, campo, nomeSupervisor()),
+      campo === 'folgas' ? 'Folga retirada' : 'Falta retirada');
   } else if (ds.liberar) {
     const [iso, turnoId, idx] = ds.liberar.split('|');
     gravarVaga(iso, turnoId, Number(idx), { nome: '', tipo: '' }, 'Removido');
-  } else if (ds.expandir) {
-    if (estado.expandidos.has(ds.expandir)) estado.expandidos.delete(ds.expandir);
-    else estado.expandidos.add(ds.expandir);
+  } else if (ds.dia) {
+    estado.diaSel = ds.dia;
     render();
+    document.querySelector('.dia-unico')?.scrollIntoView({ block: 'nearest' });
   } else if (ds.abrir) {
     abrirDia(ds.abrir);
   } else if (ds.modo && ds.modo !== estado.modo) {
     estado.modo = ds.modo;
-    estado.rolouHoje = false;
     atualizarUrl();
     assinarEscalas();
     render();

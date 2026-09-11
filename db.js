@@ -1,6 +1,6 @@
 // Acesso ao Firestore. Dois lugares guardam tudo:
 //   config/principal             → hubs, turnos (com vagas), supervisores, colaboradores, datas especiais
-//   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (e se é fixo ou freelancer) e as folgas do dia
+//   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, serverTimestamp,
@@ -83,12 +83,25 @@ export async function salvarVaga(hubId, dataIso, turnoId, indice, dados, supervi
   }, { merge: true });
 }
 
-// Adiciona ou retira um nome das folgas de um turno naquele dia.
-export async function alterarFolga(hubId, dataIso, turnoId, nome, adicionar, supervisor) {
+// Lança uma folga ou falta num turno. Um nome não fica nas duas listas ao
+// mesmo tempo: lançar como falta tira da folga, e vice-versa.
+export async function lancarAusencia(hubId, dataIso, turnoId, nome, campo, supervisor) {
+  const outro = campo === 'faltas' ? 'folgas' : 'faltas';
   await setDoc(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
     hubId,
     data: dataIso,
-    folgas: { [turnoId]: adicionar ? arrayUnion(nome) : arrayRemove(nome) },
+    [campo]: { [turnoId]: arrayUnion(nome) },
+    [outro]: { [turnoId]: arrayRemove(nome) },
+    atualizadoPor: supervisor,
+    atualizadoEm: serverTimestamp()
+  }, { merge: true });
+}
+
+export async function removerAusencia(hubId, dataIso, turnoId, nome, campo, supervisor) {
+  await setDoc(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
+    hubId,
+    data: dataIso,
+    [campo]: { [turnoId]: arrayRemove(nome) },
     atualizadoPor: supervisor,
     atualizadoEm: serverTimestamp()
   }, { merge: true });

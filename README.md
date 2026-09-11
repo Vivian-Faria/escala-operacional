@@ -50,9 +50,10 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 | O quê | Onde |
 |---|---|
-| Vaga descoberta | Destacada em amarelo, com contagem no dia, no mês e no resumo do período |
+| Vaga descoberta | Destacada em vermelho, com contagem no dia, no mês (um quadradinho por vaga) e no resumo do período |
 | Fixo ou freelancer | Perguntado para cada nome lançado; muda para "não confirmado" se o nome for trocado |
-| Folgas | Campo em cada turno de cada dia |
+| Folgas e faltas | Campo em cada turno de cada dia; o botão "Faltou" no nome escalado lança a falta e a vaga volta a contar como descoberta |
+| Celular | Faixa com os 7 dias no topo e um dia aberto por vez |
 | Conflitos | Aviso em vermelho se a mesma pessoa estiver em dois turnos que se sobrepõem (inclusive em hubs diferentes) ou escalada num turno em que está de folga |
 | Feriados | Nacionais e datas comemorativas calculados automaticamente (Carnaval, Páscoa, Dia das Mães, Black Friday etc.); feriados da cidade são cadastrados na página 1 |
 | Tempo real | Se dois supervisores estiverem com a escala aberta, um vê o que o outro lança sem recarregar |
@@ -60,7 +61,7 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 ### Estrutura dos dados
 
 - `config/principal`: todos os cadastros (um documento só).
-- `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas e as folgas de um hub em um dia.
+- `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
 
 ### Arquivos
 
