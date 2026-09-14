@@ -140,7 +140,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 }
 .status.visivel { opacity: 1; transform: translate(-50%, 0); }
 .status.erro { background: var(--alerta); }
-.pagina-cadastros .status { bottom: 84px; }
+.pagina-cadastros .status { bottom: calc(84px + env(safe-area-inset-bottom)); }
 
 /* ============================================================
    PÁGINA 2 — ESCALA
@@ -162,7 +162,17 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   letter-spacing: -.01em; line-height: 1.1;
 }
 .barra-dir { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
-.resumo { margin: 0; color: var(--grafite); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.resumo { margin: 0; color: var(--grafite); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.progresso { display: inline-flex; align-items: center; gap: 8px; color: var(--tinta); }
+.progresso strong { font-weight: 800; }
+.prog-barra {
+  flex: none; width: 74px; height: 8px; border-radius: 4px;
+  background: var(--furo-fundo); overflow: hidden;
+}
+.prog-barra > span { display: block; height: 100%; background: var(--tinta); }
+.prog-barra.completo { background: var(--ok-fundo); }
+.prog-barra.completo > span { background: var(--ok); }
+.resumo-vagas { font-size: 13.5px; }
 
 .pilula {
   display: inline-block; padding: 2px 10px; border-radius: 999px;
@@ -238,41 +248,81 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .turno-cont.incompleto { color: var(--furo); }
 
 /* ---------- vagas ---------- */
-.vagas { display: flex; flex-direction: column; gap: 6px; }
-.vaga input { min-height: 36px; padding: 6px 8px; font-size: 13.5px; border-radius: var(--raio-p); }
-
-/* Vaga descoberta: vermelho forte, é o que o supervisor precisa ver primeiro */
-.vaga.descoberta input {
-  background: var(--furo-fundo);
-  border: 2px solid var(--furo);
+.vagas { display: flex; flex-direction: column; gap: 8px; }
+.vaga { display: flex; flex-direction: column; gap: 5px; }
+.vaga.dividida {
+  padding: 6px; border-radius: var(--raio-m);
+  background: var(--papel); border: 1px solid var(--linha);
 }
-.vaga.descoberta input::placeholder { color: var(--furo-texto); font-weight: 700; opacity: 1; }
-.passado .vaga.descoberta input { border-width: 1px; border-style: dashed; }
-.passado .vaga.descoberta input::placeholder { font-weight: 500; }
+.vaga.dividida.descoberta { border-color: var(--furo); background: var(--furo-fundo); }
 
-.vaga.ocupada input { border: 1px solid var(--linha-forte); background: var(--superficie); font-weight: 600; }
+.parte { display: flex; flex-direction: column; gap: 4px; }
+.vaga.dividida .parte + .parte { padding-top: 7px; border-top: 1px dashed var(--linha-forte); }
+.parte-nome { display: flex; align-items: center; gap: 3px; }
+.parte-nome input { flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 13.5px; border-radius: var(--raio-p); }
+.btn-tirar {
+  flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%;
+  background: none; color: var(--grafite); font-size: 16px; line-height: 1;
+}
+.btn-tirar:hover { background: var(--linha); color: var(--tinta); }
 
-/* Escalado que faltou: nome riscado e vaga contando como descoberta */
-.vaga.faltou input {
+/* Horário descoberto: vermelho forte, é o que o supervisor precisa ver primeiro */
+.vaga.descoberta .parte-nome input {
+  background: var(--furo-fundo); border: 2px solid var(--furo);
+}
+.vaga.descoberta .parte-nome input::placeholder { color: var(--furo-texto); font-weight: 700; opacity: 1; }
+.passado .vaga.descoberta .parte-nome input { border-width: 1px; border-style: dashed; }
+.passado .vaga.descoberta .parte-nome input::placeholder { font-weight: 500; }
+.vaga.ocupada .parte-nome input { border: 1px solid var(--linha-forte); background: var(--superficie); font-weight: 600; }
+/* Dentro de uma vaga dividida, cada pessoa tem o seu próprio estado */
+.vaga.dividida .parte-nome input { border: 1px solid var(--linha-forte); background: var(--superficie); font-weight: 600; }
+.vaga.dividida .parte-nome input:placeholder-shown {
+  background: var(--furo-fundo); border: 2px solid var(--furo); font-weight: 500;
+}
+
+/* Quem faltou: nome riscado e horário de volta para a fila */
+.parte.faltou .parte-nome input {
   background: var(--furo-fundo); border: 2px solid var(--furo);
   color: var(--furo-texto); text-decoration: line-through; font-weight: 600;
 }
-.vaga-furo { margin: 3px 0 0; font-size: 12px; font-weight: 700; color: var(--furo-texto); }
+.vaga-furo { margin: 0; font-size: 12px; font-weight: 700; color: var(--furo-texto); }
+.vaga-buraco {
+  margin: 0; padding: 3px 7px; border-radius: var(--raio-p);
+  background: var(--furo); color: #fff; font-size: 12px; font-weight: 700;
+}
+.passado .vaga-buraco { background: var(--furo-fundo); color: var(--furo-texto); }
 
-.vaga.conflito input { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
-.vaga-alerta { margin: 3px 0 0; font-size: 12px; line-height: 1.3; color: var(--conflito); font-weight: 600; }
+.horas { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.hora { display: flex; align-items: center; gap: 4px; flex: 1 1 120px; min-width: 0; }
+.hora > span { flex: none; color: var(--grafite); font-size: 11.5px; }
+.hora input[type=time] { flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 4px 2px 4px 5px; font-size: 12.5px; }
+/* Nas colunas da semana o espaço é curto: entra e sai ficam um sobre o outro */
+.quadro-semana .horas { flex-direction: column; gap: 4px; }
+.quadro-semana .hora { flex: none; }
+.quadro-semana .hora > span { width: 32px; }
 
-.tipo { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 4px; }
+.btn-dividir {
+  align-self: flex-start; padding: 3px 9px; min-height: 28px;
+  background: none; border: 1px dashed var(--linha-forte); border-radius: var(--raio-p);
+  color: var(--grafite); font-size: 12px; font-weight: 600;
+}
+.btn-dividir:hover { border-color: var(--tinta); border-style: solid; color: var(--tinta); }
+.vaga.ocupada:not(.dividida) .btn-dividir, .passado .btn-dividir { opacity: .55; }
+.vaga.ocupada:not(.dividida) .btn-dividir:hover { opacity: 1; }
+
+.vaga.conflito .parte-nome input { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
+.vaga-alerta { margin: 0; font-size: 12px; line-height: 1.3; color: var(--conflito); font-weight: 600; }
+
+.tipo { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
 .tipo-pergunta { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--tinta); }
 .tipo button {
-  flex: 1 1 0; min-width: 0; min-height: 26px; padding: 2px 3px; font-size: 11.5px;
+  flex: 1 1 26%; min-width: 0; min-height: 26px; padding: 2px 3px; font-size: 11.5px;
   border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
 }
 .tipo button:hover { border-color: var(--tinta); }
 .tipo button[aria-pressed="true"] { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.tipo .btn-faltou { flex-basis: 100%; }
 .tipo .btn-faltou[aria-pressed="true"] { background: var(--furo); border-color: var(--furo); }
-.vaga.pendente .tipo { padding: 5px; background: var(--papel); border: 1px dashed var(--grafite); border-radius: var(--raio-p); }
-.vaga.pendente .tipo button { min-height: 30px; }
 
 .extras { margin-top: 6px; font-size: 13px; }
 .extras p { margin: 0 0 2px; color: var(--conflito); font-size: 12px; }
@@ -367,9 +417,17 @@ button.cel:hover { background: #F6F8F5; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .n-ok { font-weight: 600; }
-.n-ok.freela { color: var(--grafite); font-weight: 500; }
+.n-ok.avulso { color: var(--grafite); font-weight: 500; }
+.n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
+.n-tag {
+  margin-left: 4px; padding: 0 4px; border-radius: 3px;
+  background: var(--papel); border: 1px solid var(--linha);
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+}
 .n-furo { color: var(--furo); font-weight: 700; }
 .cel.passado .n-ok { color: var(--grafite); font-weight: 500; }
+.cel.passado .n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
+.n-tag { opacity: .7; }
 .cel.passado .n-furo { color: var(--furo-texto); font-weight: 600; }
 
 /* Um quadradinho por vaga (usado no celular) */
@@ -449,7 +507,11 @@ button.cel:hover { background: #F6F8F5; }
   .seletor .campo { flex: 1 1 0; min-width: 0; }
   .area { padding-top: 12px; }
 
-  .dia-unico .vaga input { min-height: 46px; font-size: 16px; padding: 8px 12px; }
+  .dia-unico .parte-nome input { min-height: 46px; font-size: 16px; padding: 8px 12px; }
+  .dia-unico .horas input[type=time] { min-height: 40px; font-size: 15px; }
+  .dia-unico .btn-tirar { width: 36px; height: 36px; font-size: 20px; }
+  .dia-unico .btn-dividir { min-height: 38px; font-size: 13.5px; padding: 4px 12px; }
+  .dia-unico .vaga-buraco, .dia-unico .vaga-furo { font-size: 13px; }
   .dia-unico .turno { padding-left: 10px; }
   .dia-unico .turno-nome { font-size: 15px; }
   .dia-unico .turno-hora { font-size: 14px; }
@@ -509,13 +571,16 @@ button.cel:hover { background: #F6F8F5; }
     margin: auto 0 0; border-radius: 14px 14px 0 0;
   }
   .dlg-corpo { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
-  .dlg-dia .vaga input { min-height: 46px; font-size: 16px; }
+  .dlg-dia .parte-nome input { min-height: 46px; font-size: 16px; }
+  .dlg-dia .horas input[type=time] { min-height: 40px; font-size: 15px; }
+  .dlg-dia .btn-dividir { min-height: 38px; font-size: 13.5px; }
   .dlg-dia .tipo button { min-height: 38px; font-size: 14px; }
   .dlg-dia .aus-add input, .dlg-dia .aus-add button { min-height: 44px; }
   .dlg-dia .aus-add button { flex: none; padding: 0 14px; }
   .dlg-dia .aus-add input { font-size: 16px; }
 
-  .status { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  /* Acima do selo do Netlify, para o aviso de "Salvo" não ficar escondido */
+  .status { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 
 /* ============================================================
@@ -532,6 +597,7 @@ button.cel:hover { background: #F6F8F5; }
 .login-caixa .erro { color: var(--alerta); min-height: 1.2em; font-size: 14px; }
 
 .pagina-cadastros #telaApp { max-width: 1120px; margin: 0 auto; }
+.pagina-cadastros .area { padding-bottom: 120px; }
 .abas { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--linha-forte); margin-bottom: 22px; }
 .abas button {
   background: none; border: 0; padding: 10px 14px; white-space: nowrap; color: var(--grafite);
@@ -610,13 +676,16 @@ button.cel:hover { background: #F6F8F5; }
 .automaticas ul { list-style: none; padding: 0; margin: 10px 0 0; columns: 2 280px; }
 .automaticas li { padding: 3px 0; font-size: 14px; break-inside: avoid; }
 
+/* Botões à esquerda: o canto de baixo à direita fica livre para o selo do Netlify */
 .barra-salvar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  display: flex; align-items: center; justify-content: flex-end; gap: 16px;
-  padding: 12px var(--margem);
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px var(--margem) calc(12px + env(safe-area-inset-bottom));
   background: var(--superficie); border-top: 2px solid var(--tinta);
 }
-.barra-salvar p { margin: 0 auto 0 0; font-weight: 600; }
+.barra-salvar p { margin: 0; order: 3; font-weight: 600; }
+#btnSalvar { order: 1; }
+#btnDescartar { order: 2; }
 
 @media (max-width: 760px) {
   .linha-add { flex-direction: column; }
@@ -624,6 +693,11 @@ button.cel:hover { background: #F6F8F5; }
   .item > input[type=text] { max-width: none; flex-basis: 100%; }
   .item > select { flex: 1; }
   .barra-salvar p { display: none; }
+  /* Faixa livre embaixo para o selo do Netlify não cobrir os botões */
+  .barra-salvar { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+  .barra-salvar .btn-primario { flex: 1; }
+  .pagina-cadastros .area { padding-bottom: 190px; }
+  .pagina-cadastros .status { bottom: calc(150px + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

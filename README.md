@@ -50,9 +50,11 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 | O quê | Onde |
 |---|---|
+| Progresso | O resumo do período mostra a porcentagem já preenchida (ex: "54% da escala do mês preenchida"), com barra ao lado |
 | Vaga descoberta | Destacada em vermelho, com contagem no dia, no mês e no resumo do período |
 | Visão do mês | Cada turno tem cor própria (manhã, tarde, noite). No computador, cada dia mostra os nomes escalados por turno, a fração coberta e o selo Completo ou quantas vagas seguem descobertas; no celular, um quadradinho por vaga |
-| Fixo ou freelancer | Perguntado para cada nome lançado; muda para "não confirmado" se o nome for trocado |
+| Tipo de contrato | Fixo, freelancer ou intermitente, perguntado para cada nome lançado; volta a "não confirmado" se o nome for trocado |
+| Vaga dividida | O botão "Dividir horário" permite cobrir uma vaga com duas ou mais pessoas em horários quebrados (ex: freela das 12:00 às 17:00 e intermitente das 17:00 às 00:00). A vaga só fica completa quando não sobra buraco; enquanto sobrar, aparece "Falta cobrir HH:MM–HH:MM" |
 | Folgas e faltas | Campo em cada turno de cada dia; o botão "Faltou" no nome escalado lança a falta e a vaga volta a contar como descoberta |
 | Celular | Faixa com os 7 dias no topo e um dia aberto por vez |
 | Conflitos | Aviso em vermelho se a mesma pessoa estiver em dois turnos que se sobrepõem (inclusive em hubs diferentes) ou escalada num turno em que está de folga |
@@ -63,6 +65,7 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 
 - `config/principal`: todos os cadastros (um documento só).
 - `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
+  Cada vaga guarda uma lista de pessoas: `{partes: [{nome, tipo, inicio, fim}]}`. Sem `inicio`/`fim`, a pessoa cobre o turno inteiro.
 
 ### Arquivos
 

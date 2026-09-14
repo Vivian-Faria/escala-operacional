@@ -4,7 +4,7 @@ import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
   ordenaTurnos, faixaDoDia, normalizaNome, limparNome, sobrepoe, escapeHtml, porNome,
-  vagasDe, plural, criarStatus
+  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, textoBuraco, pedacos, hhmm, toMin, faixaCurta, horaCurta
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -89,23 +89,31 @@ const nomeSupervisor = () => estado.cfg.supervisores.find((s) => s.id === estado
 const turnosDoHub = () => estado.cfg.turnos.filter((t) => t.hubId === estado.hubId);
 
 // Situação de cada vaga cadastrada de um turno naquele dia.
-// Quem está escalado e faltou deixa a vaga descoberta.
+// A vaga pode ter uma pessoa no turno inteiro ou várias em horários quebrados.
+// Quem faltou deixa o seu trecho em aberto.
 function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
   const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
-  return Array.from({ length: vagasNoDia(t, dow) }, (_, i) => {
-    const v = salvas[i] || { nome: '', tipo: '' };
-    const temNome = Boolean(v.nome.trim());
-    const faltou = temNome && faltas.has(normalizaNome(v.nome));
-    return { ...v, faltou, coberta: temNome && !faltou };
-  });
+  const faltou = (nome) => faltas.has(normalizaNome(nome));
+  return Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou));
+}
+
+function montarVaga(t, partes, faltou) {
+  const cob = cobertura(t, partes, faltou);
+  return {
+    partes: partes.map((p) => ({ ...p, faltou: Boolean(p.nome && faltou(p.nome)) })),
+    dividida: ehDividida(partes),
+    coberta: cob.coberta,
+    buracos: cob.buracos,
+    vazia: partes.length === 0
+  };
 }
 
 function turnosDoDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
   return ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0
-    || vagasSalvas(iso, t.id).some((v) => v.nome.trim())
+    || vagasSalvas(iso, t.id).some((partes) => partes.length)
     || listaDoTurno(iso, 'folgas', t.id).length
     || listaDoTurno(iso, 'faltas', t.id).length));
 }
@@ -113,15 +121,17 @@ function turnosDoDia(d) {
 function contagemDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
-  const c = { total: 0, cobertas: 0, descobertas: 0, pendentes: 0, freelas: 0, faltas: 0 };
+  const c = { total: 0, cobertas: 0, descobertas: 0, pendentes: 0, faltas: 0, freelancer: 0, intermitente: 0 };
   for (const t of turnosDoHub()) {
     c.faltas += listaDoTurno(iso, 'faltas', t.id).length;
     for (const v of situacaoVagas(iso, t, dow)) {
       c.total++;
-      if (!v.coberta) continue;
-      c.cobertas++;
-      if (!v.tipo) c.pendentes++;
-      if (v.tipo === 'freelancer') c.freelas++;
+      if (v.coberta) c.cobertas++;
+      for (const p of v.partes) {
+        if (!p.nome || p.faltou) continue;
+        if (!p.tipo) c.pendentes++;
+        if (p.tipo === 'freelancer' || p.tipo === 'intermitente') c[p.tipo]++;
+      }
     }
   }
   c.descobertas = c.total - c.cobertas;
@@ -138,9 +148,15 @@ function indiceDoDia(iso) {
     for (const [turnoId, valor] of Object.entries(d.slots || {})) {
       const turno = turnoPorId(turnoId);
       if (!turno) continue;
-      vagasDe(valor).forEach((v, idx) => {
-        const norm = normalizaNome(v.nome);
-        if (norm) escalados.push({ norm, hubId: d.hubId, hubNome, turno, idx });
+      vagasDe(valor).forEach((partes, idx) => {
+        partes.forEach((p, pi) => {
+          const norm = normalizaNome(p.nome);
+          // Quem tem horário próprio é comparado pelo trecho que cobre
+          const janela = p.inicio || p.fim
+            ? { inicio: p.inicio || turno.inicio, fim: p.fim || turno.fim, nome: turno.nome, id: turno.id }
+            : turno;
+          if (norm) escalados.push({ norm, hubId: d.hubId, hubNome, turno: janela, idx, pi });
+        });
       });
     }
     for (const [turnoId, lista] of Object.entries(d.folgas || {})) {
@@ -160,14 +176,17 @@ function onde(e) {
   return `${hub}${e.turno.nome} (${e.turno.inicio}–${e.turno.fim})`;
 }
 
-function alertasVaga(ind, turno, idx, nome) {
-  const norm = normalizaNome(nome);
+function alertasVaga(ind, turno, idx, pi, parte) {
+  const norm = normalizaNome(parte.nome);
   if (!norm) return [];
+  const janela = parte.inicio || parte.fim
+    ? { inicio: parte.inicio || turno.inicio, fim: parte.fim || turno.fim }
+    : turno;
   const msgs = [];
-  const outros = ind.escalados.filter((e) => e.norm === norm && sobrepoe(e.turno, turno)
-    && !(e.hubId === estado.hubId && e.turno.id === turno.id && e.idx === idx));
+  const outros = ind.escalados.filter((e) => e.norm === norm && sobrepoe(e.turno, janela)
+    && !(e.hubId === estado.hubId && e.turno.id === turno.id && e.idx === idx && e.pi === pi));
   if (outros.length) msgs.push(`Também escalado em ${outros.map(onde).join('; ')}`);
-  const deFolga = ind.folgas.filter((f) => f.norm === norm && sobrepoe(f.turno, turno));
+  const deFolga = ind.folgas.filter((f) => f.norm === norm && sobrepoe(f.turno, janela));
   if (deFolga.length) msgs.push(`Está de folga em ${deFolga.map(onde).join('; ')}`);
   return msgs;
 }
@@ -274,29 +293,55 @@ function htmlContDia(c) {
   return `${fracao}<span class="selo selo-furo">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
 }
 
-function htmlVaga(iso, t, i, v, alertas, travado, rotDia) {
-  const chave = `${iso}|${t.id}|${i}`;
-  const temNome = Boolean(v.nome.trim());
-  const situacao = v.faltou ? 'faltou' : temNome ? 'ocupada' : 'descoberta';
-  const cls = ['vaga', situacao, alertas.length ? 'conflito' : '',
-    v.coberta && !v.tipo ? 'pendente' : ''].filter(Boolean).join(' ');
+function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
+  const chave = `${iso}|${t.id}|${i}|${pi}`;
+  const temNome = Boolean(p.nome.trim());
   const dis = travado ? 'disabled' : '';
-  const acoes = temNome ? `
-    <div class="tipo" role="group" aria-label="${escapeHtml(v.nome)}">
-      ${v.coberta && !v.tipo ? '<span class="tipo-pergunta">Fixo ou freelancer?</span>' : ''}
-      <button type="button" data-tipo-vaga="${chave}" data-valor="fixo" aria-pressed="${v.tipo === 'fixo'}" ${dis}>Fixo</button>
-      <button type="button" data-tipo-vaga="${chave}" data-valor="freelancer" aria-pressed="${v.tipo === 'freelancer'}" aria-label="Freelancer" ${dis}>Freela</button>
-      <button type="button" class="btn-faltou" data-faltou="${iso}|${t.id}" data-nome="${escapeHtml(v.nome)}" aria-pressed="${v.faltou}" ${dis}>Faltou</button>
+  const rotulo = mostrarHoras ? `${t.nome}, vaga ${i + 1}, pessoa ${pi + 1}, ${rotDia}` : `${t.nome}, vaga ${i + 1}, ${rotDia}`;
+  const quem = escapeHtml(p.nome) || `pessoa ${pi + 1}`;
+  const horas = mostrarHoras ? `
+    <div class="horas">
+      <label class="hora"><span>Entra</span>
+        <input type="time" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
+          data-hora="${chave}|inicio" data-foco="hi|${chave}" ${dis}></label>
+      <label class="hora"><span>Sai</span>
+        <input type="time" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
+          data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
     </div>` : '';
-  return `<div class="${cls}">
-    <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
-      value="${escapeHtml(v.nome)}" placeholder="Descoberta"
-      aria-label="${escapeHtml(t.nome)}, vaga ${i + 1}, ${rotDia}"
-      data-chave="${chave}" data-foco="v|${chave}" ${dis}>
-    ${v.faltou ? '<p class="vaga-furo">Faltou. A vaga está descoberta.</p>' : ''}
+  const acoes = temNome ? `
+    <div class="tipo" role="group" aria-label="${escapeHtml(p.nome)}">
+      ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Fixo, freela ou intermitente?</span>' : ''}
+      ${Object.entries(TIPOS).map(([valor, tp]) => `<button type="button" data-tipo-vaga="${chave}" data-valor="${valor}"
+        aria-pressed="${p.tipo === valor}" aria-label="${valor === 'fixo' ? 'Fixo' : valor === 'freelancer' ? 'Freelancer' : 'Intermitente'}" ${dis}>${tp.botao}</button>`).join('')}
+      <button type="button" class="btn-faltou" data-faltou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}" aria-pressed="${p.faltou}" ${dis}>Faltou</button>
+    </div>` : '';
+  return `<div class="parte${p.faltou ? ' faltou' : ''}">
+    <div class="parte-nome">
+      <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
+        value="${escapeHtml(p.nome)}" placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}"
+        aria-label="${escapeHtml(rotulo)}" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+      ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
+        aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
+    </div>
+    ${horas}
+    ${p.faltou ? '<p class="vaga-furo">Faltou. O horário está descoberto.</p>' : ''}
     ${acoes}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
   </div>`;
+}
+
+function htmlVaga(iso, t, i, v, ind, travado, rotDia) {
+  const dis = travado ? 'disabled' : '';
+  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : ''].filter(Boolean).join(' ');
+  const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
+  const corpo = partes.map((p, pi) =>
+    htmlParte(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, v.dividida)).join('');
+  const buracos = v.dividida && v.buracos.length && v.partes.some((p) => p.nome)
+    ? `<p class="vaga-buraco">Falta cobrir ${v.buracos.map(textoBuraco).join(' e ')}</p>` : '';
+  const rodape = v.dividida
+    ? `<button type="button" class="btn-dividir" data-add-parte="${iso}|${t.id}|${i}" ${dis}>+ pessoa</button>`
+    : `<button type="button" class="btn-dividir" data-dividir="${iso}|${t.id}|${i}" ${dis}>Dividir horário</button>`;
+  return `<div class="${cls}">${corpo}${buracos}${rodape}</div>`;
 }
 
 function htmlAusencias(iso, t, ind, travado, rotDia) {
@@ -342,12 +387,11 @@ function htmlDia(d) {
     const n = vagasNoDia(t, dow);
     const situacao = situacaoVagas(iso, t, dow);
     const cobertas = situacao.filter((v) => v.coberta).length;
-    const htmlVagas = situacao
-      .map((v, i) => htmlVaga(iso, t, i, v, alertasVaga(ind, t, i, v.nome), travado, rotDia)).join('');
-    const extras = vagasSalvas(iso, t.id).map((v, i) => ({ ...v, i })).slice(n).filter((v) => v.nome.trim());
+    const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('');
+    const extras = vagasSalvas(iso, t.id).map((partes, i) => ({ partes, i })).slice(n).filter((x) => x.partes.length);
     const htmlExtras = extras.length ? `<div class="extras">
       <p>Acima das vagas cadastradas</p>
-      ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.nome)}</span>
+      ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.partes.map((p) => p.nome).join(', '))}</span>
         <button type="button" class="btn-texto" data-liberar="${iso}|${t.id}|${x.i}">Remover</button></div>`).join('')}
     </div>` : '';
     const cont = n ? `<span class="turno-cont ${cobertas >= n ? 'completo' : 'incompleto'}">${cobertas}/${n}</span>` : '';
@@ -369,22 +413,31 @@ function somar(tot, c, futuro) {
   tot.total += c.total;
   tot.cobertas += c.cobertas;
   tot.pendentes += c.pendentes;
-  tot.freelas += c.freelas;
+  tot.freelancer += c.freelancer;
+  tot.intermitente += c.intermitente;
   tot.faltas += c.faltas;
   if (futuro) tot.descobertas += c.descobertas;
 }
-const totalZerado = () => ({ total: 0, cobertas: 0, descobertas: 0, pendentes: 0, freelas: 0, faltas: 0 });
+const totalZerado = () => ({ total: 0, cobertas: 0, descobertas: 0, pendentes: 0, faltas: 0, freelancer: 0, intermitente: 0 });
 
 function htmlResumo(tot, incluiHoje) {
   if (!estado.escalasProntas) return 'Carregando escala…';
   if (!tot.total) return 'Nenhuma vaga neste período';
-  let html = `<span>${tot.cobertas} de ${tot.total} vagas cobertas</span>`;
+  const pct = Math.round((tot.cobertas / tot.total) * 100);
+  const periodo = estado.modo === 'mes' ? 'do mês' : 'da semana';
+  let html = `<span class="progresso">
+      <span class="prog-barra ${pct >= 100 ? 'completo' : ''}" aria-hidden="true"><span style="width:${pct}%"></span></span>
+      <span><strong>${pct}%</strong> da escala ${periodo} preenchida</span>
+    </span>
+    <span class="resumo-vagas">${tot.cobertas} de ${tot.total} vagas cobertas</span>`;
   if (tot.descobertas) {
     html += ` <span class="pilula pilula-furo">${plural(tot.descobertas, 'descoberta', 'descobertas')}${incluiHoje ? ' a partir de hoje' : ''}</span>`;
   }
   if (tot.faltas) html += ` <span class="pilula pilula-falta">${plural(tot.faltas, 'falta', 'faltas')}</span>`;
-  if (tot.pendentes) html += ` <span class="pilula pilula-pendente">${tot.pendentes} sem confirmar fixo ou freela</span>`;
-  if (tot.freelas) html += ` <span class="pilula">${plural(tot.freelas, 'freelancer', 'freelancers')}</span>`;
+  if (tot.pendentes) html += ` <span class="pilula pilula-pendente">${tot.pendentes} sem tipo confirmado</span>`;
+  for (const chave of ['freelancer', 'intermitente']) {
+    if (tot[chave]) html += ` <span class="pilula">${plural(tot[chave], ...TIPOS[chave].plural)}</span>`;
+  }
   return html;
 }
 
@@ -473,15 +526,22 @@ function htmlEscalados(d) {
   const soUmTurno = turnos.length === 1;
   return `<span class="nomes">${turnos.map((t) => {
     const vagas = situacaoVagas(iso, t, dow);
-    const nomes = vagas.filter((v) => v.coberta)
-      .map((v) => `<span class="n-ok${v.tipo === 'freelancer' ? ' freela' : ''}">${escapeHtml(v.nome)}</span>`).join('');
+    const nomes = vagas.flatMap((v) => v.partes.filter((p) => p.nome && !p.faltou).map((p) => {
+      const tag = p.tipo && p.tipo !== 'fixo' ? `<span class="n-tag">${TIPOS[p.tipo].curto}</span>` : '';
+      const hora = v.dividida
+        ? `<span class="n-hora">${faixaCurta(p.inicio || t.inicio, p.fim || t.fim)}</span>` : '';
+      return `<span class="n-ok${tag ? ' avulso' : ''}">${hora}${escapeHtml(p.nome)}${tag}</span>`;
+    })).join('');
     const furos = vagas.filter((v) => !v.coberta).length;
+    const buracos = vagas.filter((v) => !v.coberta).flatMap((v) => v.buracos);
     const cobertas = vagas.length - furos;
     return `<span class="nomes-turno faixa-${faixaDoDia(t.inicio)}">
       ${soUmTurno ? '' : `<span class="nt-rot"><span class="nt-nome">${escapeHtml(t.nome)}</span>
         <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${cobertas}/${vagas.length}</span></span>`}
-      <span class="nt-lista">${nomes}${furos
-        ? `<span class="n-furo">${plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
+      <span class="nt-lista">${nomes}${furos ? `<span class="n-furo">${
+        buracos.length && buracos.length <= 2 && vagas.some((v) => v.dividida)
+          ? `Falta ${buracos.map(([a, b]) => faixaCurta(hhmm(a), hhmm(b))).join(' e ')}`
+          : plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
     </span>`;
   }).join('')}</span>`;
 }
@@ -528,7 +588,7 @@ function renderMes() {
   el.quadro.innerHTML = `<div class="mes-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
     <div class="mes-grade">${celulas}</div>
     <p class="mes-legenda">
-      <span class="leg-nomes">Nomes em cinza são freelancers. Toque num dia para lançar a escala.</span>
+      <span class="leg-nomes">Freelancers e intermitentes aparecem com etiqueta ao lado do nome. Toque num dia para lançar a escala.</span>
       <span class="leg-pontos"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</span>
     </p>`;
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
@@ -577,19 +637,95 @@ async function gravar(acao, msgOk) {
   } catch (err) { erroGravacao(err); }
 }
 
-function gravarVaga(iso, turnoId, idx, dados, msgOk) {
-  return gravar(() => salvarVaga(estado.hubId, iso, turnoId, idx, dados, nomeSupervisor()), msgOk);
+function gravarPartes(iso, turnoId, idx, partes, msgOk) {
+  const limpas = partes
+    .map((p) => ({ nome: limparNome(p.nome), tipo: p.tipo || '', inicio: p.inicio || '', fim: p.fim || '' }))
+    .filter((p) => p.nome || p.inicio || p.fim);
+  return gravar(() => salvarVaga(estado.hubId, iso, turnoId, idx, { partes: limpas }, nomeSupervisor()), msgOk);
+}
+
+// Partes como estão gravadas agora, para alterar só o que mudou
+function partesAtuais(iso, turnoId, idx) {
+  return (vagasSalvas(iso, turnoId)[idx] || []).map((p) => ({ ...p }));
+}
+
+function alterarParte(iso, turnoId, idx, pi, mudanca, msgOk) {
+  const partes = partesAtuais(iso, turnoId, idx);
+  while (partes.length <= pi) partes.push({ nome: '', tipo: '', inicio: '', fim: '' });
+  partes[pi] = { ...partes[pi], ...mudanca };
+  return gravarPartes(iso, turnoId, idx, partes, msgOk);
 }
 
 function salvarNome(input) {
-  const [iso, turnoId, idx] = input.dataset.chave.split('|');
+  const [iso, turnoId, idx, pi] = input.dataset.parte.split('|');
   const nome = limparNome(input.value);
   input.value = nome;
-  const atual = vagasSalvas(iso, turnoId)[Number(idx)] || { nome: '', tipo: '' };
+  const partes = partesAtuais(iso, turnoId, Number(idx));
+  const atual = partes[Number(pi)] || { nome: '', tipo: '' };
   if (nome === atual.nome) return;
-  // Pessoa nova na vaga: o tipo precisa ser confirmado de novo
-  gravarVaga(iso, turnoId, Number(idx), { nome, tipo: '' },
-    nome ? 'Salvo. Confirme se é fixo ou freelancer.' : 'Vaga liberada');
+  // Pessoa nova no horário: o tipo precisa ser confirmado de novo
+  alterarParte(iso, turnoId, Number(idx), Number(pi), { nome, tipo: '' },
+    nome ? 'Salvo. Confirme o tipo de contrato.' : 'Horário liberado');
+}
+
+function salvarHora(input) {
+  const [iso, turnoId, idx, pi, campo] = input.dataset.hora.split('|');
+  const partes = partesAtuais(iso, turnoId, Number(idx));
+  const p = partes[Number(pi)];
+  if (!p) return;
+  const turno = turnoPorId(turnoId);
+  const antes = p[campo] || (campo === 'inicio' ? turno.inicio : turno.fim);
+  const novo = input.value;
+  if (!novo || novo === antes) { input.value = antes; return; }
+  p[campo] = novo;
+  // Se o próximo trecho começava onde este terminava, acompanha a mudança
+  if (campo === 'fim') {
+    const prox = partes[Number(pi) + 1];
+    if (prox && (prox.inicio || turno.inicio) === antes) prox.inicio = novo;
+  }
+  if (campo === 'inicio' && Number(pi) > 0) {
+    const ant = partes[Number(pi) - 1];
+    if (ant && (ant.fim || turno.fim) === antes) ant.fim = novo;
+  }
+  gravarPartes(iso, turnoId, Number(idx), partes, 'Horário salvo');
+}
+
+// Divide a vaga em dois trechos. Quem já estava fica no primeiro.
+function dividirVaga(iso, turnoId, idx) {
+  const turno = turnoPorId(turnoId);
+  const partes = partesAtuais(iso, turnoId, idx);
+  const [a, b] = pedacos(turno, 2);
+  const novas = [
+    { ...(partes[0] || { nome: '', tipo: '' }), inicio: a[0], fim: a[1] },
+    { nome: '', tipo: '', inicio: b[0], fim: b[1] }
+  ];
+  for (const extra of partes.slice(1)) novas.push({ ...extra, inicio: extra.inicio || b[0], fim: extra.fim || b[1] });
+  gravarPartes(iso, turnoId, idx, novas, 'Vaga dividida. Ajuste os horários e preencha os nomes.');
+}
+
+// Acrescenta uma pessoa começando no primeiro buraco que existir
+function adicionarParte(iso, turnoId, idx) {
+  const turno = turnoPorId(turnoId);
+  const partes = partesAtuais(iso, turnoId, idx);
+  const faltas = new Set(listaDoTurno(iso, 'faltas', turnoId).map(normalizaNome));
+  const { buracos } = cobertura(turno, partes, (n) => faltas.has(normalizaNome(n)));
+  const [ini, fim] = buracos[0] || [toMin(turno.inicio), toMin(turno.fim)];
+  partes.push({ nome: '', tipo: '', inicio: hhmm(ini), fim: hhmm(fim) });
+  gravarPartes(iso, turnoId, idx, partes, 'Horário adicionado');
+}
+
+function tirarParte(iso, turnoId, idx, pi) {
+  const partes = partesAtuais(iso, turnoId, idx);
+  partes.splice(pi, 1);
+  // Sobrando uma pessoa no turno inteiro, a vaga volta ao formato simples
+  if (partes.length === 1) {
+    const turno = turnoPorId(turnoId);
+    const p = partes[0];
+    if ((p.inicio || turno.inicio) === turno.inicio && (p.fim || turno.fim) === turno.fim) {
+      partes[0] = { nome: p.nome, tipo: p.tipo, inicio: '', fim: '' };
+    }
+  }
+  gravarPartes(iso, turnoId, idx, partes, 'Horário removido');
 }
 
 // Nome como já está gravado na lista (para retirar exatamente o mesmo texto)
@@ -652,27 +788,19 @@ $('#dlgFechar').addEventListener('click', () => el.dlg.close());
 el.dlg.addEventListener('close', () => { estado.diaAberto = null; });
 el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(); });
 
-document.addEventListener('input', (e) => {
-  const i = e.target;
-  if (!i.matches?.('input[data-chave]')) return;
-  const vaga = i.closest('.vaga');
-  if (!vaga || vaga.classList.contains('faltou')) return;
-  const tem = Boolean(i.value.trim());
-  vaga.classList.toggle('ocupada', tem);
-  vaga.classList.toggle('descoberta', !tem);
-});
-
 document.addEventListener('change', (e) => {
-  if (e.target.matches?.('input[data-chave]')) salvarNome(e.target);
+  const i = e.target;
+  if (i.matches?.('input[data-parte]')) salvarNome(i);
+  else if (i.matches?.('input[data-hora]')) salvarHora(i);
 });
 
 // Enter na vaga pula para a próxima
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const i = e.target;
-  if (i.matches?.('input[data-chave]')) {
+  if (i.matches?.('input[data-parte]')) {
     e.preventDefault();
-    const campos = [...document.querySelectorAll('input[data-chave]:not([disabled])')]
+    const campos = [...document.querySelectorAll('input[data-parte]:not([disabled])')]
       .filter((x) => x.offsetParent !== null);
     const prox = campos[campos.indexOf(i) + 1];
     if (prox) prox.focus(); else i.blur();
@@ -687,9 +815,17 @@ document.addEventListener('click', (e) => {
   if (!b) return;
   const ds = b.dataset;
   if (ds.tipoVaga) {
-    const [iso, turnoId, idx] = ds.tipoVaga.split('|');
-    gravarVaga(iso, turnoId, Number(idx), { tipo: ds.valor },
-      ds.valor === 'fixo' ? 'Marcado como fixo' : 'Marcado como freelancer');
+    const [iso, turnoId, idx, pi] = ds.tipoVaga.split('|');
+    alterarParte(iso, turnoId, Number(idx), Number(pi), { tipo: ds.valor }, `Marcado como ${TIPOS[ds.valor].plural[0]}`);
+  } else if (ds.dividir) {
+    const [iso, turnoId, idx] = ds.dividir.split('|');
+    dividirVaga(iso, turnoId, Number(idx));
+  } else if (ds.addParte) {
+    const [iso, turnoId, idx] = ds.addParte.split('|');
+    adicionarParte(iso, turnoId, Number(idx));
+  } else if (ds.tirarParte) {
+    const [iso, turnoId, idx, pi] = ds.tirarParte.split('|');
+    tirarParte(iso, turnoId, Number(idx), Number(pi));
   } else if (ds.faltou) {
     const [iso, turnoId] = ds.faltou.split('|');
     const registrado = nomeNaLista(iso, 'faltas', turnoId, ds.nome);
@@ -708,7 +844,7 @@ document.addEventListener('click', (e) => {
       campo === 'folgas' ? 'Folga retirada' : 'Falta retirada');
   } else if (ds.liberar) {
     const [iso, turnoId, idx] = ds.liberar.split('|');
-    gravarVaga(iso, turnoId, Number(idx), { nome: '', tipo: '' }, 'Removido');
+    gravarPartes(iso, turnoId, Number(idx), [], 'Removido');
   } else if (ds.dia) {
     estado.diaSel = ds.dia;
     render();

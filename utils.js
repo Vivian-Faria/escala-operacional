@@ -78,8 +78,35 @@ export function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// Cada vaga é salva como {nome, tipo} ('fixo' | 'freelancer' | '' = não confirmado).
-// Aceita mapa {"0": {...}, "1": {...}} ou lista; também aceita nomes em texto puro.
+export const TIPOS = {
+  fixo: { botao: 'Fixo', curto: 'fixo', plural: ['fixo', 'fixos'] },
+  freelancer: { botao: 'Freela', curto: 'freela', plural: ['freelancer', 'freelancers'] },
+  intermitente: { botao: 'Interm.', curto: 'interm.', plural: ['intermitente', 'intermitentes'] }
+};
+
+// Uma vaga é salva como {partes: [{nome, tipo, inicio, fim}]}.
+// Sem inicio/fim, a pessoa cobre o turno inteiro. Formato antigo ({nome, tipo}
+// ou texto puro) continua sendo lido normalmente.
+function limparParte(p) {
+  if (!p) return null;
+  if (typeof p === 'string') return p.trim() ? { nome: limparNome(p), tipo: '', inicio: '', fim: '' } : null;
+  const nome = limparNome(p.nome);
+  if (!nome && !p.inicio && !p.fim) return null;
+  return { nome, tipo: p.tipo || '', inicio: p.inicio || '', fim: p.fim || '' };
+}
+
+export function partesDe(valor) {
+  if (!valor) return [];
+  if (typeof valor === 'string') return [limparParte(valor)].filter(Boolean);
+  if (Array.isArray(valor.partes)) return valor.partes.map(limparParte).filter(Boolean);
+  return [limparParte({ nome: valor.nome, tipo: valor.tipo })].filter(Boolean);
+}
+
+// Vaga dividida: mais de uma pessoa, ou alguém com horário próprio
+export function ehDividida(partes) {
+  return partes.length > 1 || partes.some((p) => p.inicio || p.fim);
+}
+
 export function vagasDe(valor) {
   if (!valor) return [];
   const bruto = [];
@@ -90,11 +117,69 @@ export function vagasDe(valor) {
       if (Number.isInteger(i) && i >= 0) bruto[i] = v;
     }
   }
-  return Array.from(bruto, (v) => {
-    if (!v) return { nome: '', tipo: '' };
-    if (typeof v === 'string') return { nome: v, tipo: '' };
-    return { nome: v.nome || '', tipo: v.tipo || '' };
-  });
+  return Array.from(bruto, (v) => partesDe(v));
+}
+
+export function hhmm(min) {
+  const m = ((min % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+// Minutos que uma parte cobre, sempre dentro da janela do turno.
+// Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520.
+function trechoDaParte(parte, tIni, tFim) {
+  if (!parte.inicio && !parte.fim) return [tIni, tFim];
+  let a = parte.inicio ? toMin(parte.inicio) : tIni;
+  let b = parte.fim ? toMin(parte.fim) : tFim;
+  while (a < tIni) a += 1440;
+  while (b <= a) b += 1440;
+  return [Math.max(a, tIni), Math.min(b, tFim)];
+}
+
+// O que está coberto e o que ficou em aberto dentro do turno.
+// `faltou` diz se a pessoa daquela parte faltou (aí o trecho volta a ficar aberto).
+export function cobertura(turno, partes, faltou = () => false) {
+  const [tIni, tFim] = intervalo(turno);
+  const trechos = partes
+    .filter((p) => p.nome && !faltou(p.nome))
+    .map((p) => trechoDaParte(p, tIni, tFim))
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+
+  const buracos = [];
+  let cursor = tIni;
+  for (const [a, b] of trechos) {
+    if (a > cursor) buracos.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < tFim) buracos.push([cursor, tFim]);
+  return {
+    buracos,
+    coberta: trechos.length > 0 && buracos.length === 0,
+    minutosAbertos: buracos.reduce((soma, [a, b]) => soma + (b - a), 0)
+  };
+}
+
+export function textoBuraco([a, b]) {
+  return `${hhmm(a)}–${hhmm(b)}`;
+}
+
+// Forma curta para caber nas células do mês: 12:00 vira 12h, 09:30 fica 09:30
+export function horaCurta(h) {
+  return h.endsWith(':00') ? `${h.slice(0, 2)}h` : h;
+}
+export function faixaCurta(ini, fim) {
+  return `${horaCurta(ini)}–${horaCurta(fim)}`;
+}
+
+// Divide a janela do turno em N pedaços iguais, arredondados em 30 minutos
+export function pedacos(turno, n = 2) {
+  const [ini, fim] = intervalo(turno);
+  const passo = Math.max(30, Math.round((fim - ini) / n / 30) * 30);
+  const cortes = [ini];
+  for (let i = 1; i < n; i++) cortes.push(Math.min(ini + passo * i, fim));
+  cortes.push(fim);
+  return Array.from({ length: n }, (_, i) => [hhmm(cortes[i]), hhmm(cortes[i + 1])]);
 }
 
 export function plural(n, um, varios) {
