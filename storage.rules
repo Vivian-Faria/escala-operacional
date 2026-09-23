@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Mesmo e-mail do firestore.rules e do ADMIN_EMAIL em firebase-config.js
+    function ehAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "vivian@orioncloudkitchens.com.br";
+    }
+
+    // Selfies do ponto: qualquer colaborador envia a própria foto ao bater o
+    // ponto (a página não pede login); só o administrador consegue reabrir e
+    // ver as fotos depois, na conciliação dentro de Cadastros.
+    match /pontos/{hubId}/{data}/{nome}/{arquivo} {
+      allow read: if ehAdmin();
+      allow write: if request.resource.size < 6 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if ehAdmin();
+    }
+  }
+}

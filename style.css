@@ -324,6 +324,20 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .tipo .btn-faltou { flex-basis: 100%; }
 .tipo .btn-faltou[aria-pressed="true"] { background: var(--furo); border-color: var(--furo); }
 
+.vaga.dispensada { gap: 4px; }
+.vaga-dispensa {
+  margin: 0; font-size: 12px; font-weight: 600; color: var(--grafite);
+  padding: 3px 7px; border-radius: var(--raio-p); background: var(--papel);
+}
+.vaga.dispensada input {
+  min-height: 36px; padding: 6px 8px; font-size: 13.5px; border-radius: var(--raio-p);
+  border: 1px dashed var(--linha-forte); background: var(--superficie);
+}
+.n-dispensa {
+  color: var(--grafite); font-style: italic; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .extras { margin-top: 6px; font-size: 13px; }
 .extras p { margin: 0 0 2px; color: var(--conflito); font-size: 12px; }
 .extra { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
@@ -652,6 +666,8 @@ button.cel:hover { background: #F6F8F5; }
 }
 .chip:hover { border-color: var(--tinta); }
 .chip[aria-pressed="true"] { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+.chip-supervisor { flex: none; padding: 5px 12px; font-size: 13px; min-height: 34px; }
+.chip-supervisor[aria-pressed="true"] { background: var(--faixa-forte, var(--tinta)); border-color: var(--faixa-forte, var(--tinta)); }
 
 .tabela-rolagem { overflow-x: auto; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); }
 .tabela-turnos { border-collapse: collapse; width: 100%; min-width: 960px; }
@@ -703,3 +719,93 @@ button.cel:hover { background: #F6F8F5; }
 @media (prefers-reduced-motion: reduce) {
   .status { transition: none; }
 }
+
+
+/* ============================================================
+   PÁGINA 3 — PONTO
+   ============================================================ */
+.pagina-ponto .area { max-width: 480px; margin: 0 auto; }
+.ponto-data {
+  margin: 4px 0 16px; font-stretch: 76%; font-weight: 800; font-size: 26px;
+  line-height: 1.15; letter-spacing: -.01em;
+}
+.passos { display: flex; flex-direction: column; gap: 12px; }
+.passo {
+  padding: 16px; border-radius: var(--raio-m);
+  background: var(--superficie); border: 1px solid var(--linha);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.passo.bloqueado { background: var(--papel); border-style: dashed; opacity: .75; }
+.passo.atual { border: 2px solid var(--tinta); }
+.passo.feito { border-color: var(--ok); }
+
+.passo-rot { margin: 0; font-weight: 700; font-size: 15px; }
+.passo-obs { margin: 0; color: var(--grafite); font-size: 13px; }
+
+.passo-txt { display: flex; align-items: center; gap: 12px; }
+.passo-check {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--ok-fundo); color: var(--ok); font-weight: 800; font-size: 18px;
+  display: grid; place-items: center;
+}
+.passo-hora { margin: 2px 0 0; font-size: 22px; font-weight: 800; font-stretch: 80%; }
+.passo-foto { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--raio-p); }
+
+.btn-camera {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 56px; border: 0; border-radius: var(--raio-p);
+  background: var(--tinta); color: #fff; font-size: 16px; font-weight: 700;
+}
+.btn-camera:hover { background: #2A3846; }
+.btn-camera-icone { font-size: 20px; }
+
+.passos-fim {
+  margin: 4px 0 0; padding: 14px; text-align: center; border-radius: var(--raio-m);
+  background: var(--ok-fundo); color: var(--ok); font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .pagina-ponto .seletor { flex-direction: column; }
+  .ponto-data { font-size: 22px; }
+}
+
+
+/* ---------- Cadastros: aba Ponto (conciliação) ---------- */
+.barra-ponto {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px 20px; margin-bottom: 16px;
+}
+.barra-ponto .nav-periodo h3 { margin: 0 8px; font-size: 17px; font-weight: 700; }
+.barra-ponto .alternador button { padding: 6px 14px; min-height: 34px; font-size: 13.5px; }
+
+.pessoa-ponto {
+  background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m);
+  margin-bottom: 10px; overflow: hidden;
+}
+.pessoa-ponto summary {
+  cursor: pointer; list-style: none; padding: 12px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px;
+}
+.pessoa-ponto summary::-webkit-details-marker { display: none; }
+.pessoa-ponto[open] summary { border-bottom: 1px solid var(--linha); }
+.pessoa-nome { font-weight: 700; }
+.pessoa-resumo { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--grafite); font-size: 13.5px; }
+
+.tabela-ponto { border-collapse: collapse; width: 100%; min-width: 720px; }
+.tabela-ponto th {
+  text-align: left; font-weight: 500; font-size: 12.5px; color: var(--grafite);
+  padding: 8px 10px; border-bottom: 1px solid var(--linha); white-space: nowrap;
+}
+.tabela-ponto td { padding: 7px 10px; border-bottom: 1px solid var(--linha); font-size: 13.5px; white-space: nowrap; }
+.tabela-ponto tr:last-child td { border-bottom: 0; }
+.tabela-ponto tr.linha-alerta { background: var(--furo-fundo); }
+.tabela-ponto tr.linha-diverge td.col-diff { font-weight: 700; }
+.hora-vazia { color: var(--nevoa); }
+.hora-batida {
+  border: 0; background: none; padding: 2px 4px; font: inherit; font-weight: 600;
+  color: var(--foco); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.hora-batida-sf { font-weight: 600; }
+.turnos-dia { display: block; color: var(--grafite); font-size: 11.5px; font-weight: 400; white-space: normal; }
+.diff-neg { color: var(--furo-texto); }
+.diff-pos { color: var(--ok); }

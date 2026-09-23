@@ -127,7 +127,7 @@ export function hhmm(min) {
 
 // Minutos que uma parte cobre, sempre dentro da janela do turno.
 // Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520.
-function trechoDaParte(parte, tIni, tFim) {
+export function trechoDaParte(parte, tIni, tFim) {
   if (!parte.inicio && !parte.fim) return [tIni, tFim];
   let a = parte.inicio ? toMin(parte.inicio) : tIni;
   let b = parte.fim ? toMin(parte.fim) : tFim;
@@ -162,6 +162,29 @@ export function cobertura(turno, partes, faltou = () => false) {
 
 export function textoBuraco([a, b]) {
   return `${hhmm(a)}–${hhmm(b)}`;
+}
+
+// Minutos que uma pessoa cobre num turno, considerando o horário da parte
+// dela (ou o turno inteiro, se não tiver horário próprio).
+export function minutosDaParte(turno, parte) {
+  const [tIni, tFim] = intervalo(turno);
+  const [a, b] = trechoDaParte(parte, tIni, tFim);
+  return Math.max(0, b - a);
+}
+
+// Formata minutos como "7h30" (ou "-1h15" se negativo). Sem minutos, "7h".
+export function horas(min) {
+  const sinal = min < 0 ? '-' : '';
+  const abs = Math.round(Math.abs(min));
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `${sinal}${h}h${m ? String(m).padStart(2, '0') : ''}`;
+}
+
+// Hora atual do aparelho, formato HH:MM
+export function horaAgora() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // Forma curta para caber nas células do mês: 12:00 vira 12h, 09:30 fica 09:30

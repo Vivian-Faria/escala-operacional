@@ -1,17 +1,20 @@
 # Escala de turnos
 
-Sistema simples de lançamento de escala, com duas páginas:
+Sistema simples de lançamento de escala, com três páginas:
 
-- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores e feriados/datas especiais.
-- **`index.html`** (link dos supervisores): o supervisor escolhe o nome e o hub, vê o calendário com as vagas e lança quem está em cada turno, se é fixo ou freelancer, e as folgas.
+- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores, feriados/datas especiais e a conciliação do ponto.
+- **`index.html`** (link dos supervisores): o supervisor escolhe o nome e o hub, vê o calendário com as vagas e lança quem está em cada turno, se é fixo, freelancer ou intermitente, e as folgas e faltas.
+- **`ponto.html`** (link dos colaboradores, sem senha): cada um registra a própria chegada, saída para o almoço, volta do almoço e saída, com uma selfie a cada batida.
 
-Os dados ficam no Firebase (Firestore). O site é 100% estático e roda no Netlify sem build.
+Os dados ficam no Firebase (Firestore para os textos, Storage para as fotos). O site é 100% estático e roda no Netlify sem build.
+
+> **Aviso importante:** o Ponto desta ferramenta é um controle interno, para comparar o previsto com o realizado e ter uma base de horas trabalhadas. Ele **não substitui** um sistema de ponto eletrônico oficial, caso a empresa já tenha um homologado conforme a legislação trabalhista (Portaria 671/2021).
 
 ---
 
 ## 1. Criar o projeto no Firebase
 
-> Recomendo um **projeto novo**, separado do controle de freezers, para que as regras de segurança de um não interfiram no outro.
+> Recomendo um **projeto novo**, separado de outros sistemas, para que as regras de segurança de um não interfiram no outro.
 
 1. Acesse https://console.firebase.google.com e clique em **Adicionar projeto** (pode desativar o Google Analytics).
 2. No menu, abra **Firestore Database → Criar banco de dados**. Escolha o **modo de produção** e a região `southamerica-east1 (São Paulo)`.
@@ -25,24 +28,31 @@ Os dados ficam no Firebase (Firestore). O site é 100% estático e roda no Netli
 3. Coloque esse mesmo e-mail em `ADMIN_EMAIL` dentro de **`firebase-config.js`**.
 4. (Recomendado) Em **Authentication → Configurações → Ações do usuário**, desative a criação de contas, para ninguém criar outro usuário.
 
-## 3. Publicar as regras de segurança
+## 3. Ativar o Storage (guarda as fotos do ponto)
 
-1. Abra o arquivo **`firestore.rules`** e troque `admin@suaempresa.com.br` pelo seu e-mail de admin.
-2. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
+1. No menu, abra **Storage → Vamos começar** e siga o assistente (a região normalmente já vem travada na mesma do Firestore).
+2. Isso cria um espaço de arquivos vinculado ao mesmo projeto; nenhuma configuração extra é necessária além de publicar as regras no próximo passo.
 
-Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só o administrador altera os cadastros.
+## 4. Publicar as regras de segurança
 
-## 4. Subir no GitHub e no Netlify
+1. Abra o arquivo **`firestore.rules`** e troque o e-mail de exemplo pelo seu e-mail de admin. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
+2. Abra o arquivo **`storage.rules`** e faça o mesmo (troque o e-mail). No Firebase, vá em **Storage → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
+
+Com isso: qualquer pessoa com o link vê e preenche a escala e bate o próprio ponto, mas só o administrador altera os cadastros e só ele consegue abrir as fotos do ponto depois.
+
+## 5. Subir no GitHub e no Netlify
 
 1. No repositório do GitHub, clique em **Add file → Upload files**, selecione todos os arquivos de uma vez e confirme.
 2. No Netlify: **Add new site → Import an existing project → GitHub** e escolha o repositório.
 3. Deixe **Build command** vazio e **Publish directory** como `.` (o `netlify.toml` já faz isso).
 4. Após o deploy, se o login mostrar erro de domínio, adicione o endereço `seusite.netlify.app` em **Authentication → Configurações → Domínios autorizados**.
 
-## 5. Usar
+## 6. Usar
 
 1. Abra `seusite.netlify.app/cadastros.html`, entre com a senha e cadastre, nesta ordem: hubs, turnos e vagas, supervisores, colaboradores e datas da cidade. Clique em **Salvar alterações**.
-2. Envie `seusite.netlify.app` aos supervisores. Depois que ele escolhe nome e hub, o endereço na barra do navegador já guarda a escolha — dá para salvar nos favoritos ou na tela inicial do celular.
+2. Envie `seusite.netlify.app` aos supervisores, para a escala. Depois que ele escolhe nome e hub, o endereço na barra do navegador já guarda a escolha — dá para salvar nos favoritos ou na tela inicial do celular.
+3. Envie `seusite.netlify.app/ponto.html` aos colaboradores, para o ponto. Mesma lógica: depois de digitar o nome uma vez, o celular lembra.
+4. A conciliação fica em **Cadastros → aba Ponto**.
 
 ---
 
@@ -54,18 +64,27 @@ Com isso: qualquer pessoa com o link consegue ver e preencher a escala, mas só 
 | Vaga descoberta | Destacada em vermelho, com contagem no dia, no mês e no resumo do período |
 | Visão do mês | Cada turno tem cor própria (manhã, tarde, noite). No computador, cada dia mostra os nomes escalados por turno, a fração coberta e o selo Completo ou quantas vagas seguem descobertas; no celular, um quadradinho por vaga |
 | Tipo de contrato | Fixo, freelancer ou intermitente, perguntado para cada nome lançado; volta a "não confirmado" se o nome for trocado |
+| Supervisor sobressalente | Na aba Colaboradores, marque quem fica na operação como reforço (não ocupa vaga fixa). Quando a folga dele é lançada num turno e a vaga correspondente fica vazia, ela some da contagem de furos ("Dispensado" em vez de "0/1"); ainda dá para lançar um reforço ali se quiser |
 | Vaga dividida | O botão "Dividir horário" permite cobrir uma vaga com duas ou mais pessoas em horários quebrados (ex: freela das 12:00 às 17:00 e intermitente das 17:00 às 00:00). A vaga só fica completa quando não sobra buraco; enquanto sobrar, aparece "Falta cobrir HH:MM–HH:MM" |
 | Folgas e faltas | Campo em cada turno de cada dia; o botão "Faltou" no nome escalado lança a falta e a vaga volta a contar como descoberta |
 | Celular | Faixa com os 7 dias no topo e um dia aberto por vez |
 | Conflitos | Aviso em vermelho se a mesma pessoa estiver em dois turnos que se sobrepõem (inclusive em hubs diferentes) ou escalada num turno em que está de folga |
 | Feriados | Nacionais e datas comemorativas calculados automaticamente (Carnaval, Páscoa, Dia das Mães, Black Friday etc.); feriados da cidade são cadastrados na página 1 |
-| Tempo real | Se dois supervisores estiverem com a escala aberta, um vê o que o outro lança sem recarregar |
+| Tempo real | Se duas pessoas estiverem com a mesma página aberta, uma vê o que a outra lança sem recarregar |
+| Ponto por selfie | Na página `ponto.html`, sempre o dia de hoje: 4 passos em ordem (chegada, saída para o almoço, volta do almoço, saída). Cada um abre a câmera do celular, tira a foto e grava o horário do toque. Dá para corrigir uma batida errada a qualquer momento |
+| Conciliação do ponto | Em Cadastros → aba Ponto: por hub e por período (semana ou mês), mostra cada colaborador com o total previsto na escala e o total batido, e por dia as 4 horas batidas, o total do dia e a diferença. Toque num horário para abrir a selfie daquela batida |
+
+### Sobre a privacidade das fotos
+
+As fotos do ponto ficam no Storage do Firebase e só abrem para quem está logado como administrador (mesmo e-mail do `firebase-config.js`). Quem bate o ponto não consegue reabrir a própria foto depois — ela só serve para o administrador conferir. Vale avisar os colaboradores que a selfie é usada só para esse controle interno.
 
 ### Estrutura dos dados
 
 - `config/principal`: todos os cadastros (um documento só).
 - `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
   Cada vaga guarda uma lista de pessoas: `{partes: [{nome, tipo, inicio, fim}]}`. Sem `inicio`/`fim`, a pessoa cobre o turno inteiro.
+- `pontos/{hubId}_{AAAA-MM-DD}`: as batidas do dia de cada colaborador naquele hub — `{registros: {nomeNormalizado: {nome, chegada: {hora, fotoPath}, saidaAlmoco: {...}, voltaAlmoco: {...}, saida: {...}}}}`.
+- Storage, pasta `pontos/{hubId}/{AAAA-MM-DD}/{nomeNormalizado}/`: as selfies de cada batida.
 
 ### Arquivos
 
@@ -73,15 +92,18 @@ Todos ficam soltos na raiz do repositório (sem pastas):
 
 ```
 index.html          página 2 — escala dos supervisores
-cadastros.html      página 1 — cadastros (com senha)
+cadastros.html      página 1 — cadastros (com senha) e conciliação do ponto
+ponto.html          página 3 — registro de ponto por selfie
 style.css
 firebase-config.js  ← único arquivo que você precisa editar
-db.js               leitura e gravação no Firestore
+db.js               leitura e gravação no Firestore e no Storage
 auth.js             login do administrador
 feriados.js         feriados nacionais e datas comemorativas
 escala.js           lógica da página 2
-cadastros.js        lógica da página 1
+cadastros.js        lógica da página 1 (cadastros + conciliação do ponto)
+ponto.js            lógica da página 3
 utils.js
-firestore.rules     regras de segurança (colar no Firebase)
+firestore.rules     regras de segurança do Firestore (colar no Firebase)
+storage.rules       regras de segurança do Storage (colar no Firebase)
 netlify.toml
 ```

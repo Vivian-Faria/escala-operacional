@@ -23,5 +23,16 @@ service cloud.firestore {
         && request.resource.data.hubId is string;
       allow delete: if ehAdmin();
     }
+
+    // Ponto: qualquer colaborador registra a própria batida; a conciliação
+    // com a escala (dentro de Cadastros) lê esses mesmos dados
+    match /pontos/{docId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(
+          ['hubId', 'data', 'registros', 'atualizadoEm'])
+        && request.resource.data.data is string
+        && request.resource.data.hubId is string;
+      allow delete: if ehAdmin();
+    }
   }
 }

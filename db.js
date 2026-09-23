@@ -1,15 +1,19 @@
-// Acesso ao Firestore. Dois lugares guardam tudo:
+// Acesso ao Firestore e ao Storage. Lugares que guardam tudo:
 //   config/principal             → hubs, turnos (com vagas), supervisores, colaboradores, datas especiais
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
+//   pontos/{hubId}_{AAAA-MM-DD}  → horário batido por cada colaborador naquele hub e dia
+//   Storage: pontos/{hubId}/{AAAA-MM-DD}/{nome}/{batida}.jpg → selfies do ponto
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, serverTimestamp,
   arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { firebaseConfig } from './firebase-config.js';
 
 let app;
 let db;
+let storage;
 
 export function configuracaoPronta() {
   return Boolean(firebaseConfig.apiKey) && !firebaseConfig.apiKey.startsWith('COLE');
@@ -21,6 +25,10 @@ export function obterApp() {
 function obterDb() {
   if (!db) db = getFirestore(obterApp());
   return db;
+}
+function obterStorage() {
+  if (!storage) storage = getStorage(obterApp());
+  return storage;
 }
 
 const refConfig = () => doc(obterDb(), 'config', 'principal');
@@ -105,4 +113,55 @@ export async function removerAusencia(hubId, dataIso, turnoId, nome, campo, supe
     atualizadoPor: supervisor,
     atualizadoEm: serverTimestamp()
   }, { merge: true });
+}
+
+// ================= Ponto (registro de horário com foto) =================
+const refPonto = (hubId, dataIso) => doc(obterDb(), 'pontos', `${hubId}_${dataIso}`);
+
+// Envia a selfie ao Storage. Só devolve o caminho: quem bate o ponto não tem
+// login, então não consegue (nem precisa) ler o link da foto de volta — só o
+// administrador, na conciliação, consegue abrir (ver storage.rules).
+export async function enviarFotoPonto(hubId, dataIso, nomeChave, campo, blob) {
+  const caminho = `pontos/${hubId}/${dataIso}/${nomeChave}/${campo}-${Date.now()}.jpg`;
+  await uploadBytes(ref(obterStorage(), caminho), blob, { contentType: blob.type || 'image/jpeg' });
+  return { path: caminho };
+}
+
+// Gera o link de uma foto já enviada. Só funciona para quem está logado como
+// administrador (as regras do Storage recusam para qualquer outra pessoa).
+export async function obterUrlFoto(caminho) {
+  return getDownloadURL(ref(obterStorage(), caminho));
+}
+
+// Acompanha o registro de UM colaborador num dia (usado na página de Ponto,
+// para saber o que já foi batido e não deixar bater de novo sem querer).
+export function ouvirPontoDoDia(hubId, dataIso, nomeChave, aoReceber, aoErrar) {
+  return onSnapshot(refPonto(hubId, dataIso), (snap) => {
+    const registros = snap.exists() ? (snap.data().registros || {}) : {};
+    aoReceber(registros[nomeChave] || null);
+  }, aoErrar);
+}
+
+// Grava uma batida (chegada, saídaAlmoço, voltaAlmoço ou saída).
+export async function salvarBatida(hubId, dataIso, nomeChave, nome, campo, hora, foto) {
+  await setDoc(refPonto(hubId, dataIso), {
+    hubId,
+    data: dataIso,
+    registros: { [nomeChave]: { nome, [campo]: { hora, fotoPath: foto.path } } },
+    atualizadoEm: serverTimestamp()
+  }, { merge: true });
+}
+
+// Todos os registros de ponto do período (usado na conciliação em Cadastros).
+export function ouvirPontos(inicioIso, fimIso, aoReceber, aoErrar) {
+  const q = query(
+    collection(obterDb(), 'pontos'),
+    where('data', '>=', inicioIso),
+    where('data', '<=', fimIso)
+  );
+  return onSnapshot(q, (snap) => {
+    const mapa = {};
+    snap.forEach((d) => { mapa[d.id] = d.data(); });
+    aoReceber(mapa);
+  }, aoErrar);
 }

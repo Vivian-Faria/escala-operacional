@@ -87,6 +87,9 @@ const vagasSalvas = (iso, turnoId) => vagasDe(docDia(iso)?.slots?.[turnoId]);
 const listaDoTurno = (iso, campo, turnoId) => docDia(iso)?.[campo]?.[turnoId] || [];
 const nomeSupervisor = () => estado.cfg.supervisores.find((s) => s.id === estado.supId)?.nome || '';
 const turnosDoHub = () => estado.cfg.turnos.filter((t) => t.hubId === estado.hubId);
+const supervisoresSobressalentes = () => new Set(
+  estado.cfg.colaboradores.filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
+);
 
 // Situação de cada vaga cadastrada de um turno naquele dia.
 // A vaga pode ter uma pessoa no turno inteiro ou várias em horários quebrados.
@@ -95,7 +98,18 @@ function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
   const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
   const faltou = (nome) => faltas.has(normalizaNome(nome));
-  return Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou));
+  const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou));
+
+  // Vaga vazia + folga de um supervisor sobressalente naquele turno = não é furo.
+  // Cada folga de supervisor "perdoa" uma vaga vazia; sobrando vagas vazias
+  // além disso, seguem contando como furo normalmente.
+  const sobressalentes = supervisoresSobressalentes();
+  const creditos = listaDoTurno(iso, 'folgas', t.id).filter((nome) => sobressalentes.has(normalizaNome(nome)));
+  let credito = creditos.length;
+  for (const v of vagas) {
+    if (credito > 0 && v.vazia) { v.dispensada = creditos[creditos.length - credito]; credito--; }
+  }
+  return vagas;
 }
 
 function montarVaga(t, partes, faltou) {
@@ -125,6 +139,7 @@ function contagemDia(d) {
   for (const t of turnosDoHub()) {
     c.faltas += listaDoTurno(iso, 'faltas', t.id).length;
     for (const v of situacaoVagas(iso, t, dow)) {
+      if (v.dispensada) continue;
       c.total++;
       if (v.coberta) c.cobertas++;
       for (const p of v.partes) {
@@ -332,6 +347,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
 
 function htmlVaga(iso, t, i, v, ind, travado, rotDia) {
   const dis = travado ? 'disabled' : '';
+  if (v.dispensada) return htmlVagaDispensada(iso, t, i, v, travado, rotDia);
   const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : ''].filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
   const corpo = partes.map((p, pi) =>
@@ -342,6 +358,19 @@ function htmlVaga(iso, t, i, v, ind, travado, rotDia) {
     ? `<button type="button" class="btn-dividir" data-add-parte="${iso}|${t.id}|${i}" ${dis}>+ pessoa</button>`
     : `<button type="button" class="btn-dividir" data-dividir="${iso}|${t.id}|${i}" ${dis}>Dividir horário</button>`;
   return `<div class="${cls}">${corpo}${buracos}${rodape}</div>`;
+}
+
+// Vaga sobressalente vazia por folga de supervisor: sem cobrança de furo,
+// mas com um campo opcional para quem quiser lançar um reforço mesmo assim.
+function htmlVagaDispensada(iso, t, i, v, travado, rotDia) {
+  const dis = travado ? 'disabled' : '';
+  const chave = `${iso}|${t.id}|${i}|0`;
+  return `<div class="vaga dispensada">
+    <p class="vaga-dispensa">Folga de ${escapeHtml(v.dispensada)} — vaga sobressalente, não conta como furo</p>
+    <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
+      placeholder="Reforço opcional" aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
+      data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+  </div>`;
 }
 
 function htmlAusencias(iso, t, ind, travado, rotDia) {
@@ -386,7 +415,8 @@ function htmlDia(d) {
   return turnos.map((t) => {
     const n = vagasNoDia(t, dow);
     const situacao = situacaoVagas(iso, t, dow);
-    const cobertas = situacao.filter((v) => v.coberta).length;
+    const aplicaveis = situacao.filter((v) => !v.dispensada);
+    const cobertas = aplicaveis.filter((v) => v.coberta).length;
     const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('');
     const extras = vagasSalvas(iso, t.id).map((partes, i) => ({ partes, i })).slice(n).filter((x) => x.partes.length);
     const htmlExtras = extras.length ? `<div class="extras">
@@ -394,7 +424,9 @@ function htmlDia(d) {
       ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.partes.map((p) => p.nome).join(', '))}</span>
         <button type="button" class="btn-texto" data-liberar="${iso}|${t.id}|${x.i}">Remover</button></div>`).join('')}
     </div>` : '';
-    const cont = n ? `<span class="turno-cont ${cobertas >= n ? 'completo' : 'incompleto'}">${cobertas}/${n}</span>` : '';
+    const cont = aplicaveis.length
+      ? `<span class="turno-cont ${cobertas >= aplicaveis.length ? 'completo' : 'incompleto'}">${cobertas}/${aplicaveis.length}</span>`
+      : n ? '<span class="turno-cont completo">Dispensado</span>' : '';
 
     return `<section class="turno faixa-${faixaDoDia(t.inicio)}">
       <header class="turno-cab">
@@ -525,20 +557,24 @@ function htmlEscalados(d) {
   if (!turnos.length) return '';
   const soUmTurno = turnos.length === 1;
   return `<span class="nomes">${turnos.map((t) => {
-    const vagas = situacaoVagas(iso, t, dow);
+    const todas = situacaoVagas(iso, t, dow);
+    const vagas = todas.filter((v) => !v.dispensada);
     const nomes = vagas.flatMap((v) => v.partes.filter((p) => p.nome && !p.faltou).map((p) => {
       const tag = p.tipo && p.tipo !== 'fixo' ? `<span class="n-tag">${TIPOS[p.tipo].curto}</span>` : '';
       const hora = v.dividida
         ? `<span class="n-hora">${faixaCurta(p.inicio || t.inicio, p.fim || t.fim)}</span>` : '';
       return `<span class="n-ok${tag ? ' avulso' : ''}">${hora}${escapeHtml(p.nome)}${tag}</span>`;
     })).join('');
+    const dispensas = todas.filter((v) => v.dispensada)
+      .map((v) => `<span class="n-dispensa">Folga ${escapeHtml(v.dispensada)}</span>`).join('');
     const furos = vagas.filter((v) => !v.coberta).length;
     const buracos = vagas.filter((v) => !v.coberta).flatMap((v) => v.buracos);
     const cobertas = vagas.length - furos;
+    const fracao = vagas.length ? `${cobertas}/${vagas.length}` : 'Dispensado';
     return `<span class="nomes-turno faixa-${faixaDoDia(t.inicio)}">
       ${soUmTurno ? '' : `<span class="nt-rot"><span class="nt-nome">${escapeHtml(t.nome)}</span>
-        <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${cobertas}/${vagas.length}</span></span>`}
-      <span class="nt-lista">${nomes}${furos ? `<span class="n-furo">${
+        <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${fracao}</span></span>`}
+      <span class="nt-lista">${nomes}${dispensas}${furos ? `<span class="n-furo">${
         buracos.length && buracos.length <= 2 && vagas.some((v) => v.dividida)
           ? `Falta ${buracos.map(([a, b]) => faixaCurta(hhmm(a), hhmm(b))).join(' e ')}`
           : plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
@@ -553,7 +589,7 @@ function htmlPontos(d) {
   const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
   if (!turnos.length) return '';
   return `<span class="pontos" aria-hidden="true">${turnos.map((t) => `<span class="pontos-turno">${
-    situacaoVagas(iso, t, dow).map((v) => `<i class="${v.coberta ? 'p-ok' : 'p-furo'}"></i>`).join('')
+    situacaoVagas(iso, t, dow).filter((v) => !v.dispensada).map((v) => `<i class="${v.coberta ? 'p-ok' : 'p-furo'}"></i>`).join('')
   }</span>`).join('')}</span>`;
 }
 
