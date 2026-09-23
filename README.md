@@ -6,7 +6,7 @@ Sistema simples de lançamento de escala, com três páginas:
 - **`index.html`** (link dos supervisores): o supervisor escolhe o nome e o hub, vê o calendário com as vagas e lança quem está em cada turno, se é fixo, freelancer ou intermitente, e as folgas e faltas.
 - **`ponto.html`** (link dos colaboradores, sem senha): cada um registra a própria chegada, saída para o almoço, volta do almoço e saída, com uma selfie a cada batida.
 
-Os dados ficam no Firebase (Firestore para os textos, Storage para as fotos). O site é 100% estático e roda no Netlify sem build.
+Os dados de texto ficam no Firebase (Firestore). As selfies do ponto ficam no **Cloudinary**, num plano gratuito que não pede cartão de crédito. O site é 100% estático e roda no Netlify sem build.
 
 > **Aviso importante:** o Ponto desta ferramenta é um controle interno, para comparar o previsto com o realizado e ter uma base de horas trabalhadas. Ele **não substitui** um sistema de ponto eletrônico oficial, caso a empresa já tenha um homologado conforme a legislação trabalhista (Portaria 671/2021).
 
@@ -28,24 +28,30 @@ Os dados ficam no Firebase (Firestore para os textos, Storage para as fotos). O 
 3. Coloque esse mesmo e-mail em `ADMIN_EMAIL` dentro de **`firebase-config.js`**.
 4. (Recomendado) Em **Authentication → Configurações → Ações do usuário**, desative a criação de contas, para ninguém criar outro usuário.
 
-## 3. Ativar o Storage (guarda as fotos do ponto)
+## 3. Publicar as regras de segurança do Firestore
 
-1. No menu, abra **Storage → Vamos começar** e siga o assistente (a região normalmente já vem travada na mesma do Firestore).
-2. Isso cria um espaço de arquivos vinculado ao mesmo projeto; nenhuma configuração extra é necessária além de publicar as regras no próximo passo.
+1. Abra o arquivo **`firestore.rules`** e troque o e-mail de exemplo pelo seu e-mail de admin.
+2. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
 
-## 4. Publicar as regras de segurança
+Com isso: qualquer pessoa com o link vê e preenche a escala e bate o próprio ponto, mas só o administrador altera os cadastros.
 
-1. Abra o arquivo **`firestore.rules`** e troque o e-mail de exemplo pelo seu e-mail de admin. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
-2. Abra o arquivo **`storage.rules`** e faça o mesmo (troque o e-mail). No Firebase, vá em **Storage → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
+## 4. Criar a conta do Cloudinary (guarda as selfies do ponto, de graça)
 
-Com isso: qualquer pessoa com o link vê e preenche a escala e bate o próprio ponto, mas só o administrador altera os cadastros e só ele consegue abrir as fotos do ponto depois.
+O Firebase Storage passou a exigir cartão de crédito para ser ativado, então as fotos do ponto usam o **Cloudinary**, que tem um plano gratuito sem cartão (25 GB por mês entre armazenamento e visualização — muito acima do que um ponto de equipe gera).
+
+1. Crie uma conta gratuita em https://cloudinary.com/users/register/free (dá para entrar com o Google, não pede cartão).
+2. No painel, clique na engrenagem **Settings → Upload**. Em "Upload presets", clique em **Add upload preset**.
+3. Configure: **Signing Mode: Unsigned**, e em **Folder** coloque `pontos`. Salve.
+4. Copie o **nome do preset** que você acabou de criar.
+5. No topo do painel (Dashboard), copie o **Cloud name**.
+6. Abra o arquivo **`cloudinary-config.js`** e cole os dois valores.
 
 ## 5. Subir no GitHub e no Netlify
 
 1. No repositório do GitHub, clique em **Add file → Upload files**, selecione todos os arquivos de uma vez e confirme.
 2. No Netlify: **Add new site → Import an existing project → GitHub** e escolha o repositório.
 3. Deixe **Build command** vazio e **Publish directory** como `.` (o `netlify.toml` já faz isso).
-4. Após o deploy, se o login mostrar erro de domínio, adicione o endereço `seusite.netlify.app` em **Authentication → Configurações → Domínios autorizados**.
+4. Após o deploy, se o login mostrar erro de domínio, adicione o endereço `seusite.netlify.app` em **Authentication → Configurações → Domínios autorizados** (no Firebase).
 
 ## 6. Usar
 
@@ -76,34 +82,36 @@ Com isso: qualquer pessoa com o link vê e preenche a escala e bate o próprio p
 
 ### Sobre a privacidade das fotos
 
-As fotos do ponto ficam no Storage do Firebase e só abrem para quem está logado como administrador (mesmo e-mail do `firebase-config.js`). Quem bate o ponto não consegue reabrir a própria foto depois — ela só serve para o administrador conferir. Vale avisar os colaboradores que a selfie é usada só para esse controle interno.
+As fotos ficam no Cloudinary. Diferente de um cofre com senha, o link de cada foto funciona para quem o tiver — mas esse link só aparece dentro da aba Ponto de Cadastros, que exige a senha de administrador para ser aberta. Ele não fica visível em nenhuma tela pública, nem para quem bateu o ponto. Vale avisar os colaboradores que a selfie é usada só para esse controle interno.
+
+Se um dia quiser um controle mais rígido (o link não funcionar para ninguém fora do admin), a alternativa é voltar ao Firebase Storage — que exige o plano pago (Blaze) do Firebase, mas com custo próximo de zero para esse volume de fotos.
 
 ### Estrutura dos dados
 
 - `config/principal`: todos os cadastros (um documento só).
 - `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
   Cada vaga guarda uma lista de pessoas: `{partes: [{nome, tipo, inicio, fim}]}`. Sem `inicio`/`fim`, a pessoa cobre o turno inteiro.
-- `pontos/{hubId}_{AAAA-MM-DD}`: as batidas do dia de cada colaborador naquele hub — `{registros: {nomeNormalizado: {nome, chegada: {hora, fotoPath}, saidaAlmoco: {...}, voltaAlmoco: {...}, saida: {...}}}}`.
-- Storage, pasta `pontos/{hubId}/{AAAA-MM-DD}/{nomeNormalizado}/`: as selfies de cada batida.
+- `pontos/{hubId}_{AAAA-MM-DD}`: as batidas do dia de cada colaborador naquele hub — `{registros: {nomeNormalizado: {nome, chegada: {hora, fotoUrl}, saidaAlmoco: {...}, voltaAlmoco: {...}, saida: {...}}}}`.
+- Cloudinary, pasta `pontos/{hubId}/{AAAA-MM-DD}/{nomeNormalizado}/`: as selfies de cada batida.
 
 ### Arquivos
 
 Todos ficam soltos na raiz do repositório (sem pastas):
 
 ```
-index.html          página 2 — escala dos supervisores
-cadastros.html      página 1 — cadastros (com senha) e conciliação do ponto
-ponto.html          página 3 — registro de ponto por selfie
+index.html            página 2 — escala dos supervisores
+cadastros.html        página 1 — cadastros (com senha) e conciliação do ponto
+ponto.html            página 3 — registro de ponto por selfie
 style.css
-firebase-config.js  ← único arquivo que você precisa editar
-db.js               leitura e gravação no Firestore e no Storage
-auth.js             login do administrador
-feriados.js         feriados nacionais e datas comemorativas
-escala.js           lógica da página 2
-cadastros.js        lógica da página 1 (cadastros + conciliação do ponto)
-ponto.js            lógica da página 3
+firebase-config.js    ← edite com os dados do seu projeto Firebase
+cloudinary-config.js  ← edite com os dados da sua conta Cloudinary
+db.js                 leitura e gravação no Firestore, e envio das fotos ao Cloudinary
+auth.js               login do administrador
+feriados.js           feriados nacionais e datas comemorativas
+escala.js             lógica da página 2
+cadastros.js          lógica da página 1 (cadastros + conciliação do ponto)
+ponto.js              lógica da página 3
 utils.js
-firestore.rules     regras de segurança do Firestore (colar no Firebase)
-storage.rules       regras de segurança do Storage (colar no Firebase)
+firestore.rules       regras de segurança do Firestore (colar no Firebase)
 netlify.toml
 ```

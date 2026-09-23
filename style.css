@@ -802,7 +802,7 @@ button.cel:hover { background: #F6F8F5; }
 .tabela-ponto tr.linha-diverge td.col-diff { font-weight: 700; }
 .hora-vazia { color: var(--nevoa); }
 .hora-batida {
-  border: 0; background: none; padding: 2px 4px; font: inherit; font-weight: 600;
+  display: inline-block; padding: 2px 4px; font-weight: 600;
   color: var(--foco); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
 }
 .hora-batida-sf { font-weight: 600; }

@@ -1,5 +1,5 @@
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e ponto.
-import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, ouvirPontos, obterUrlFoto } from './db.js';
+import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, ouvirPontos } from './db.js';
 import { entrar, sair, aoMudarLogin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
@@ -485,8 +485,8 @@ function tituloPeriodoPonto() {
 
 function horaOuTraco(reg, campo) {
   if (!reg?.[campo]?.hora) return '<span class="hora-vazia">—</span>';
-  return reg[campo].fotoPath
-    ? `<button type="button" class="hora-batida" data-acao="ver-foto" data-caminho="${escapeHtml(reg[campo].fotoPath)}" title="Ver foto">${reg[campo].hora}</button>`
+  return reg[campo].fotoUrl
+    ? `<a class="hora-batida" href="${escapeHtml(reg[campo].fotoUrl)}" target="_blank" rel="noopener" title="Ver foto">${reg[campo].hora}</a>`
     : `<span class="hora-batida-sf">${reg[campo].hora}</span>`;
 }
 
@@ -739,16 +739,6 @@ el.conteudo.addEventListener('click', (e) => {
         : new Date(ponto.ref.getFullYear(), ponto.ref.getMonth() + passo, 1);
       ponto.chaveFaixa = '';
       renderPonto();
-      return;
-    }
-    case 'ver-foto': {
-      const caminho = b.dataset.caminho;
-      if (!caminho) return;
-      b.disabled = true;
-      obterUrlFoto(caminho).then((url) => window.open(url, '_blank', 'noopener')).catch((err) => {
-        console.error(err);
-        mostrarStatus('Não foi possível abrir a foto.', 'erro', true);
-      }).finally(() => { b.disabled = false; });
       return;
     }
     default:

@@ -1,7 +1,7 @@
 // Página 3 — Ponto: cada colaborador registra a própria chegada, almoço e
 // saída com uma selfie. Sem senha, sem data para trás — é sempre o dia de hoje,
 // no momento em que a pessoa está ali.
-import { configuracaoPronta, ouvirConfig, ouvirPontoDoDia, enviarFotoPonto, salvarBatida } from './db.js';
+import { configuracaoPronta, cloudinaryConfigurado, ouvirConfig, ouvirPontoDoDia, enviarFotoPonto, salvarBatida } from './db.js';
 import {
   DIAS_LONGO, MESES, isoDate, escapeHtml, porNome, limparNome, normalizaNome, horaAgora, criarStatus
 } from './utils.js';
@@ -36,6 +36,9 @@ const estado = {
 if (!configuracaoPronta()) {
   mostrarAviso('Falta conectar o Firebase',
     'Preencha o arquivo <code>firebase-config.js</code> com os dados do seu projeto.');
+} else if (!cloudinaryConfigurado()) {
+  mostrarAviso('Falta conectar o Cloudinary',
+    'Preencha o arquivo <code>cloudinary-config.js</code> com os dados da sua conta gratuita do Cloudinary. O passo a passo está no README.');
 } else {
   ouvirConfig((cfg) => {
     estado.cfg = cfg;
@@ -210,6 +213,10 @@ el.inputFoto.addEventListener('change', async () => {
     await salvarBatida(estado.hubId, hojeIso, chave, nome, campo, hora, foto);
     mostrarStatus(`${PASSOS.find((p) => p.campo === campo).rotulo} registrada às ${hora}`);
   } catch (err) {
-    erroGravacao(err);
+    if (err?.code === 'cloudinary/preset-invalido') {
+      mostrarStatus('Não foi possível enviar a foto: confira o cloudinary-config.js (nome da conta e do preset).', 'erro', true);
+    } else {
+      erroGravacao(err);
+    }
   }
 });

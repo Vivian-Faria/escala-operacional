@@ -1,19 +1,19 @@
-// Acesso ao Firestore e ao Storage. Lugares que guardam tudo:
+// Acesso ao Firestore (dados) e ao Cloudinary (fotos do ponto, plano gratuito
+// sem cartão). Lugares que guardam tudo:
 //   config/principal             → hubs, turnos (com vagas), supervisores, colaboradores, datas especiais
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
-//   pontos/{hubId}_{AAAA-MM-DD}  → horário batido por cada colaborador naquele hub e dia
-//   Storage: pontos/{hubId}/{AAAA-MM-DD}/{nome}/{batida}.jpg → selfies do ponto
+//   pontos/{hubId}_{AAAA-MM-DD}  → horário batido por cada colaborador naquele hub e dia, com o link da selfie
+//   Cloudinary, pasta pontos/{hubId}/{AAAA-MM-DD}/{nome}/ → as selfies em si
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, serverTimestamp,
   arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { firebaseConfig } from './firebase-config.js';
+import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from './cloudinary-config.js';
 
 let app;
 let db;
-let storage;
 
 export function configuracaoPronta() {
   return Boolean(firebaseConfig.apiKey) && !firebaseConfig.apiKey.startsWith('COLE');
@@ -26,9 +26,10 @@ function obterDb() {
   if (!db) db = getFirestore(obterApp());
   return db;
 }
-function obterStorage() {
-  if (!storage) storage = getStorage(obterApp());
-  return storage;
+
+export function cloudinaryConfigurado() {
+  return Boolean(CLOUDINARY_CLOUD_NAME) && !CLOUDINARY_CLOUD_NAME.startsWith('COLE')
+    && Boolean(CLOUDINARY_UPLOAD_PRESET) && !CLOUDINARY_UPLOAD_PRESET.startsWith('COLE');
 }
 
 const refConfig = () => doc(obterDb(), 'config', 'principal');
@@ -118,19 +119,24 @@ export async function removerAusencia(hubId, dataIso, turnoId, nome, campo, supe
 // ================= Ponto (registro de horário com foto) =================
 const refPonto = (hubId, dataIso) => doc(obterDb(), 'pontos', `${hubId}_${dataIso}`);
 
-// Envia a selfie ao Storage. Só devolve o caminho: quem bate o ponto não tem
-// login, então não consegue (nem precisa) ler o link da foto de volta — só o
-// administrador, na conciliação, consegue abrir (ver storage.rules).
+// Envia a selfie ao Cloudinary (upload sem login, liberado pelo preset
+// "unsigned" configurado na conta) e devolve o link direto da foto.
 export async function enviarFotoPonto(hubId, dataIso, nomeChave, campo, blob) {
-  const caminho = `pontos/${hubId}/${dataIso}/${nomeChave}/${campo}-${Date.now()}.jpg`;
-  await uploadBytes(ref(obterStorage(), caminho), blob, { contentType: blob.type || 'image/jpeg' });
-  return { path: caminho };
-}
+  const dados = new FormData();
+  dados.append('file', blob, `${campo}.jpg`);
+  dados.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  dados.append('public_id', `${hubId}/${dataIso}/${nomeChave}/${campo}-${Date.now()}`);
 
-// Gera o link de uma foto já enviada. Só funciona para quem está logado como
-// administrador (as regras do Storage recusam para qualquer outra pessoa).
-export async function obterUrlFoto(caminho) {
-  return getDownloadURL(ref(obterStorage(), caminho));
+  const resposta = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: 'POST', body: dados
+  });
+  if (!resposta.ok) {
+    const erro = new Error('Falha ao enviar a foto ao Cloudinary');
+    erro.code = resposta.status === 401 || resposta.status === 400 ? 'cloudinary/preset-invalido' : 'cloudinary/erro';
+    throw erro;
+  }
+  const corpo = await resposta.json();
+  return { url: corpo.secure_url };
 }
 
 // Acompanha o registro de UM colaborador num dia (usado na página de Ponto,
@@ -147,7 +153,7 @@ export async function salvarBatida(hubId, dataIso, nomeChave, nome, campo, hora,
   await setDoc(refPonto(hubId, dataIso), {
     hubId,
     data: dataIso,
-    registros: { [nomeChave]: { nome, [campo]: { hora, fotoPath: foto.path } } },
+    registros: { [nomeChave]: { nome, [campo]: { hora, fotoUrl: foto.url } } },
     atualizadoEm: serverTimestamp()
   }, { merge: true });
 }
