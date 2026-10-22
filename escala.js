@@ -360,22 +360,21 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
     </div>` : '';
   const acoes = temNome ? `
-    <div class="tipo" role="group" aria-label="${escapeHtml(p.nome)}">
-      ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Fixo, freela ou intermitente?</span>' : ''}
+    <div class="tipo" role="group" aria-label="Tipo de contrato de ${escapeHtml(p.nome)}">
+      ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Tipo:</span>' : ''}
       ${Object.entries(TIPOS).map(([valor, tp]) => `<button type="button" data-tipo-vaga="${chave}" data-valor="${valor}"
         aria-pressed="${p.tipo === valor}" aria-label="${valor === 'fixo' ? 'Fixo' : valor === 'freelancer' ? 'Freelancer' : 'Intermitente'}" ${dis}>${tp.botao}</button>`).join('')}
     </div>
     <div class="presenca" role="group" aria-label="Presença de ${escapeHtml(p.nome)}">
       <button type="button" class="btn-confirmou" data-confirmou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.confirmou}" ${dis}>Confirmou horário</button>
-      <span class="compareceu-grupo">
-        <button type="button" class="btn-compareceu sim" data-compareceu="${iso}|${t.id}|sim" data-nome="${escapeHtml(p.nome)}"
-          aria-pressed="${p.compareceuEstado === 'sim'}" ${dis}>Compareceu</button>
-        <button type="button" class="btn-compareceu nao" data-compareceu="${iso}|${t.id}|nao" data-nome="${escapeHtml(p.nome)}"
-          aria-pressed="${p.compareceuEstado === 'nao'}" ${dis}>Não compareceu</button>
-      </span>
+        aria-pressed="${p.confirmou}" aria-label="Confirmou horário com ${escapeHtml(p.nome)}" title="Confirmou horário" ${dis}>${p.confirmou ? '✓ ' : ''}Confirmou</button>
+      <button type="button" class="btn-compareceu sim" data-compareceu="${iso}|${t.id}|sim" data-nome="${escapeHtml(p.nome)}"
+        aria-pressed="${p.compareceuEstado === 'sim'}" aria-label="${escapeHtml(p.nome)} compareceu" title="Compareceu" ${dis}>${p.compareceuEstado === 'sim' ? '✓ ' : ''}Compareceu</button>
+      <button type="button" class="btn-compareceu nao" data-compareceu="${iso}|${t.id}|nao" data-nome="${escapeHtml(p.nome)}"
+        aria-pressed="${p.compareceuEstado === 'nao'}" aria-label="${escapeHtml(p.nome)} não compareceu" title="Não compareceu" ${dis}>${p.compareceuEstado === 'nao' ? '✕ ' : ''}Faltou</button>
     </div>` : '';
-  return `<div class="parte${p.faltou ? ' faltou' : ''}">
+  const tudoOk = temNome && !p.faltou && p.confirmou && p.compareceuEstado === 'sim';
+  return `<div class="parte${p.faltou ? ' faltou' : ''}${tudoOk ? ' ok' : ''}">
     <div class="parte-nome">
       <select class="${p.nome ? '' : 'vazio'}" aria-label="${escapeHtml(rotulo)}" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
         ${opcoesColaboradores(p.nome, mostrarHoras ? 'Quem cobre' : 'Descoberta')}
