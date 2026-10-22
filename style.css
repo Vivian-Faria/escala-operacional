@@ -658,6 +658,33 @@ button.cel:hover { background: #F6F8F5; }
 .carregando { color: var(--grafite); }
 .dica { color: var(--grafite); font-size: 13px; max-width: 75ch; margin-top: 16px; }
 
+/* ---------- lembrete de prazo (seg/sex 14h-16h) ---------- */
+.lembrete {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  margin: var(--margem) var(--margem) 0; padding: 12px 16px;
+  border-radius: var(--raio-m); border: 1px solid var(--linha-forte);
+  background: var(--papel); font-size: 14px;
+}
+.lembrete strong { font-size: 14.5px; }
+.lembrete.lembrete-alerta { border-color: var(--furo); background: var(--furo-fundo); color: var(--furo-texto); }
+.lembrete.lembrete-ok { border-color: var(--ok); background: var(--ok-fundo); color: var(--ok); }
+.lembrete.lembrete-fechado.lembrete-alerta strong { color: var(--furo-texto); }
+
+/* ---------- aba Buracos na escala ---------- */
+.resumo-buracos { font-weight: 700; margin: 4px 0 18px; }
+.buraco-dia { margin-bottom: 22px; }
+.buraco-dia h3 { font-size: 15.5px; margin: 0 0 8px; text-transform: capitalize; }
+.buraco-hub { margin: 0 0 14px 4px; padding-left: 12px; border-left: 3px solid var(--linha-forte); }
+.buraco-hub h4 { font-size: 14px; margin: 0 0 6px; color: var(--grafite); }
+.buraco-turno { margin-bottom: 8px; }
+.buraco-turno-titulo { margin: 0 0 4px; font-weight: 700; font-size: 13.5px; }
+.buraco-trechos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.buraco-trecho {
+  display: flex; gap: 6px; align-items: center; padding: 4px 10px; border-radius: 999px;
+  background: var(--furo-fundo); color: var(--furo-texto); font-size: 13px; font-weight: 600;
+}
+.buraco-qtd { font-weight: 700; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips-hub { margin-bottom: 14px; }
 .chip {

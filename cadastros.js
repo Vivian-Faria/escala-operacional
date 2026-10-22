@@ -5,7 +5,8 @@ import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
   ordenaTurnos, faixaDoDia, vagasSemana, plural, parseIso, isoDate, addDays, startOfWeek,
-  capitalizar, toMin, vagasDe, minutosDaParte, horas, criarStatus
+  capitalizar, toMin, vagasDe, minutosDaParte, horas, criarStatus, vagasDoTurno, agregarBuracos,
+  hhmm
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -29,6 +30,12 @@ const ponto = {
   escalasProntas: false, pontosProntas: false,
   cancelarEscalas: null, cancelarPontos: null,
   expandido: new Set()
+};
+
+// ---------- estado da aba "Buracos na escala" (vale para todos os hubs) ----------
+const buracosEstado = {
+  hubId: '', modo: 'semana', ref: new Date(),
+  escalas: {}, prontas: false, cancelar: null, chaveFaixa: ''
 };
 
 // ================= início e login =================
@@ -207,7 +214,7 @@ function renderAba() {
     b.setAttribute('aria-selected', String(b.dataset.aba === aba));
   });
   ({ hubs: renderHubs, turnos: renderTurnos, supervisores: renderSupervisores,
-    colaboradores: renderColaboradores, datas: renderDatas, ponto: renderPonto })[aba]();
+    colaboradores: renderColaboradores, datas: renderDatas, buracos: renderBuracos, ponto: renderPonto })[aba]();
 }
 
 // ---------- Hubs ----------
@@ -376,6 +383,125 @@ function renderDatas() {
       <summary>Datas incluídas automaticamente em ${ano}</summary>
       <ul>${automaticas}</ul>
     </details>`;
+}
+
+// ---------- Buracos na escala: vagas abertas por operação/hub/data/faixa ----------
+function faixaBuracos() {
+  if (buracosEstado.modo === 'semana') {
+    const ini = startOfWeek(buracosEstado.ref);
+    return { ini, fim: addDays(ini, 6) };
+  }
+  const primeiro = new Date(buracosEstado.ref.getFullYear(), buracosEstado.ref.getMonth(), 1);
+  const ultimo = new Date(buracosEstado.ref.getFullYear(), buracosEstado.ref.getMonth() + 1, 0);
+  return { ini: primeiro, fim: ultimo, primeiro };
+}
+
+function tituloPeriodoBuracos() {
+  const { ini, fim, primeiro } = faixaBuracos();
+  if (buracosEstado.modo === 'mes') return `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
+  const a = ini.getDate(), b = fim.getDate();
+  return ini.getMonth() === fim.getMonth()
+    ? `${a} a ${b} de ${MESES[fim.getMonth()]}`
+    : `${a} de ${MESES[ini.getMonth()]} a ${b} de ${MESES[fim.getMonth()]}`;
+}
+
+function assinarBuracos() {
+  const { ini, fim } = faixaBuracos();
+  const chave = `${isoDate(ini)}|${isoDate(fim)}`;
+  if (chave === buracosEstado.chaveFaixa) return;
+  buracosEstado.chaveFaixa = chave;
+  buracosEstado.cancelar?.();
+  buracosEstado.escalas = {};
+  buracosEstado.prontas = false;
+  buracosEstado.cancelar = ouvirEscalas(isoDate(ini), isoDate(fim), (m) => {
+    buracosEstado.escalas = m;
+    buracosEstado.prontas = true;
+    renderBuracos();
+  }, () => mostrarStatus('Não foi possível carregar a escala do período.', 'erro', true));
+}
+
+// Para cada dia do período, em cada hub (ou só no filtrado) e cada turno com
+// vagas necessárias naquele dia da semana, lista os trechos de horário que
+// seguem sem gente suficiente — reaproveitando o mesmo cálculo de cobertura
+// usado na página da escala.
+function apurarBuracos() {
+  const { ini, fim } = faixaBuracos();
+  const hubs = buracosEstado.hubId ? hubsOrdenados().filter((h) => h.id === buracosEstado.hubId) : hubsOrdenados();
+  const dias = [];
+  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+    const iso = isoDate(d);
+    const dow = d.getDay();
+    const porHub = [];
+    for (const hub of hubs) {
+      const turnos = ordenaTurnos(cfg.turnos.filter((t) => t.hubId === hub.id));
+      const linhas = [];
+      for (const t of turnos) {
+        if (!Number(t.vagas?.[dow])) continue;
+        const vagas = vagasDoTurno(cfg, buracosEstado.escalas, hub.id, t, iso, dow).filter((v) => !v.dispensada);
+        if (!vagas.length) continue;
+        const agregados = agregarBuracos(vagas.map((v) => v.buracos));
+        if (agregados.length) linhas.push({ turno: t, agregados, necessarias: vagas.length });
+      }
+      if (linhas.length) porHub.push({ hub, linhas });
+    }
+    if (porHub.length) dias.push({ iso, dt: new Date(d), porHub });
+  }
+  return dias;
+}
+
+function htmlListaBuracos() {
+  if (!buracosEstado.prontas) return '<p class="carregando">Carregando…</p>';
+  const dias = apurarBuracos();
+  if (!dias.length) return '<p class="vazio">Nenhum buraco em aberto nesse período — ou nenhuma vaga necessária cadastrada ainda.</p>';
+  let totalTrechos = 0, totalMinutos = 0;
+  const corpo = dias.map(({ iso, dt, porHub }) => {
+    const blocosHub = porHub.map(({ hub, linhas }) => {
+      const blocosTurno = linhas.map(({ turno, agregados, necessarias }) => {
+        const trechos = agregados.map(([a, b, n]) => {
+          totalTrechos++; totalMinutos += (b - a) * n;
+          return `<li class="buraco-trecho"><span class="buraco-horario">${hhmm(a)}–${hhmm(b)}</span>
+            <span class="buraco-qtd">falta${n > 1 ? 'm' : ''} ${plural(n, 'pessoa', 'pessoas')}</span></li>`;
+        }).join('');
+        return `<div class="buraco-turno">
+          <p class="buraco-turno-titulo">${escapeHtml(turno.nome)} <span class="item-meta">(${plural(necessarias, 'vaga necessária', 'vagas necessárias')})</span></p>
+          <ul class="buraco-trechos">${trechos}</ul>
+        </div>`;
+      }).join('');
+      return `<div class="buraco-hub"><h4>${escapeHtml(hub.nome)}</h4>${blocosTurno}</div>`;
+    }).join('');
+    return `<div class="buraco-dia">
+      <h3>${DIAS_LONGO[dt.getDay()]}, ${dt.getDate()} de ${MESES[dt.getMonth()]}</h3>
+      ${blocosHub}
+    </div>`;
+  }).join('');
+  return `<p class="resumo-buracos">${plural(totalTrechos, 'trecho aberto', 'trechos abertos')} no período, somando ${horas(totalMinutos)} de vagas descobertas.</p>${corpo}`;
+}
+
+function renderBuracos() {
+  const hubs = hubsOrdenados();
+  if (!hubs.length) {
+    el.conteudo.innerHTML = `${cabecalho('Buracos na escala', 'Mostra, por hub e por dia, os horários que ainda precisam de gente.')}<p class="vazio">Cadastre um hub primeiro, na aba Hubs.</p>`;
+    return;
+  }
+  assinarBuracos();
+  el.conteudo.innerHTML = `
+    ${cabecalho('Buracos na escala', 'Para cada operação, mostra os trechos de horário que ainda não têm gente suficiente escalada, somando furos de vagas vazias e de vagas parcialmente cobertas.')}
+    <div class="chips chips-hub" role="group" aria-label="Hub">
+      <button type="button" class="chip" data-acao="buracos-hub" data-id="" aria-pressed="${!buracosEstado.hubId}">Todos os hubs</button>
+      ${hubs.map((h) => `<button type="button" class="chip" data-acao="buracos-hub" data-id="${h.id}" aria-pressed="${h.id === buracosEstado.hubId}">${escapeHtml(h.nome)}</button>`).join('')}
+    </div>
+    <div class="barra-ponto">
+      <div class="nav-periodo">
+        <button type="button" class="btn-icone" data-acao="buracos-anterior" aria-label="Período anterior">‹</button>
+        <button type="button" class="btn-icone" data-acao="buracos-proximo" aria-label="Próximo período">›</button>
+        <h3>${tituloPeriodoBuracos()}</h3>
+      </div>
+      <div class="alternador" role="group" aria-label="Visualização">
+        <button type="button" data-acao="buracos-modo" data-valor="semana" aria-pressed="${buracosEstado.modo === 'semana'}">Semana</button>
+        <button type="button" data-acao="buracos-modo" data-valor="mes" aria-pressed="${buracosEstado.modo === 'mes'}">Mês</button>
+      </div>
+    </div>
+    <div id="buracosLista">${htmlListaBuracos()}</div>`;
 }
 
 // ---------- Ponto: previsto (escala) vs batido (registro com foto) ----------
@@ -722,6 +848,24 @@ el.conteudo.addEventListener('click', (e) => {
     case 'remover-data':
       cfg.datasEspeciais = cfg.datasEspeciais.filter((x) => x.id !== id);
       break;
+    case 'buracos-hub':
+      buracosEstado.hubId = id;
+      renderBuracos();
+      return;
+    case 'buracos-modo':
+      buracosEstado.modo = b.dataset.valor;
+      buracosEstado.chaveFaixa = '';
+      renderBuracos();
+      return;
+    case 'buracos-anterior':
+    case 'buracos-proximo': {
+      const passo = acao === 'buracos-proximo' ? 1 : -1;
+      buracosEstado.ref = buracosEstado.modo === 'semana' ? addDays(buracosEstado.ref, passo * 7)
+        : new Date(buracosEstado.ref.getFullYear(), buracosEstado.ref.getMonth() + passo, 1);
+      buracosEstado.chaveFaixa = '';
+      renderBuracos();
+      return;
+    }
     case 'ponto-hub':
       ponto.hubId = id;
       ponto.chaveFaixa = '';

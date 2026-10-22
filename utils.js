@@ -205,6 +205,61 @@ export function pedacos(turno, n = 2) {
   return Array.from({ length: n }, (_, i) => [hhmm(cortes[i]), hhmm(cortes[i + 1])]);
 }
 
+// Situação das vagas de um turno num dia, sem depender do hub "atual" de
+// nenhuma página — usada pelo lembrete de prazo e pela aba "Buracos na escala",
+// que precisam olhar vários/todos os hubs ao mesmo tempo.
+// `escalasMap` é o mapa {hubId_AAAA-MM-DD: doc} que vem de ouvirEscalas.
+export function vagasDoTurno(cfg, escalasMap, hubId, turno, iso, dow) {
+  const doc = escalasMap[`${hubId}_${iso}`];
+  const salvasBruto = doc?.slots?.[turno.id];
+  const salvas = vagasDe(salvasBruto);
+  const faltas = new Set((doc?.faltas?.[turno.id] || []).map(normalizaNome));
+  const faltou = (nome) => faltas.has(normalizaNome(nome));
+  const n = Number(turno.vagas?.[dow]) || 0;
+  const vagas = Array.from({ length: n }, (_, i) => {
+    const partes = salvas[i] || [];
+    const cob = cobertura(turno, partes, faltou);
+    return { partes, coberta: cob.coberta, buracos: cob.buracos, vazia: partes.length === 0 };
+  });
+
+  const sobressalentes = new Set(
+    (cfg.colaboradores || []).filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
+  );
+  const creditos = (doc?.folgas?.[turno.id] || []).filter((nome) => sobressalentes.has(normalizaNome(nome)));
+  let credito = creditos.length;
+  for (const v of vagas) {
+    if (credito > 0 && v.vazia) { v.dispensada = creditos[creditos.length - credito]; credito--; }
+  }
+  return vagas;
+}
+
+// Junta os buracos de várias vagas do mesmo turno/dia num resumo por trecho
+// de horário: para cada janela de tempo, quantas vagas estão faltando ali.
+// Entrada: uma lista de listas de buracos (uma lista por vaga). Saída:
+// [[inicioMin, fimMin, quantasFaltando], ...], em ordem, sem sobreposição.
+export function agregarBuracos(listaDeBuracos) {
+  const pontos = [];
+  for (const buracos of listaDeBuracos) {
+    for (const [a, b] of buracos) { pontos.push([a, 1]); pontos.push([b, -1]); }
+  }
+  if (!pontos.length) return [];
+  pontos.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  const trechos = [];
+  let nivel = 0, inicio = pontos[0][0];
+  for (const [t, delta] of pontos) {
+    if (nivel > 0 && t > inicio) trechos.push([inicio, t, nivel]);
+    nivel += delta;
+    inicio = t;
+  }
+  const juntos = [];
+  for (const [a, b, n] of trechos) {
+    const ultimo = juntos[juntos.length - 1];
+    if (ultimo && ultimo[1] === a && ultimo[2] === n) ultimo[1] = b;
+    else juntos.push([a, b, n]);
+  }
+  return juntos;
+}
+
 export function plural(n, um, varios) {
   return `${n} ${n === 1 ? um : varios}`;
 }

@@ -2,7 +2,7 @@
 
 Sistema simples de lançamento de escala, com três páginas:
 
-- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores, feriados/datas especiais e a conciliação do ponto.
+- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores, feriados/datas especiais, os buracos abertos na escala e a conciliação do ponto.
 - **`index.html`** (link dos supervisores): o supervisor escolhe o nome e o hub, vê o calendário com as vagas e lança quem está em cada turno, se é fixo, freelancer ou intermitente, e as folgas e faltas.
 - **`ponto.html`** (link dos colaboradores, sem senha): cada um registra a própria chegada, saída para o almoço, volta do almoço e saída, com uma selfie a cada batida.
 
@@ -79,6 +79,8 @@ O Firebase Storage passou a exigir cartão de crédito para ser ativado, então 
 | Tempo real | Se duas pessoas estiverem com a mesma página aberta, uma vê o que a outra lança sem recarregar |
 | Ponto por selfie | Na página `ponto.html`, sempre o dia de hoje: 4 passos em ordem (chegada, saída para o almoço, volta do almoço, saída). Cada um abre a câmera do celular, tira a foto e grava o horário do toque. Dá para corrigir uma batida errada a qualquer momento |
 | Conciliação do ponto | Em Cadastros → aba Ponto: por hub e por período (semana ou mês), mostra cada colaborador com o total previsto na escala e o total batido, e por dia as 4 horas batidas, o total do dia e a diferença. Toque num horário para abrir a selfie daquela batida |
+| Buracos na escala | Em Cadastros → aba "Buracos na escala": por hub (ou todos juntos) e por período (semana ou mês), lista os trechos de horário que ainda não têm gente suficiente, turno por turno, somando vagas vazias e vagas parcialmente cobertas |
+| Lembrete de prazo | Na página da escala, toda segunda e sexta das 14h às 16h aparece uma faixa com a contagem regressiva para lançar a escala (segunda = semana atual, sexta = semana seguinte) e se já está lançada/completa; depois das 16h, mostra "Prazo encerrado" por 24h com a mesma informação; fora dessas janelas, some. Vale para todos os hubs juntos e usa a hora real do aparelho, então funciona igual em qualquer dispositivo ou depois de recarregar |
 
 ### Sobre a privacidade das fotos
 

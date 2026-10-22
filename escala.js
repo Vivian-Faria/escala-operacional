@@ -4,14 +4,16 @@ import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
   ordenaTurnos, faixaDoDia, normalizaNome, limparNome, sobrepoe, escapeHtml, porNome,
-  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, textoBuraco, pedacos, hhmm, toMin, faixaCurta, horaCurta
+  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, textoBuraco, pedacos, hhmm, toMin, faixaCurta, horaCurta,
+  vagasDoTurno
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
 const el = {
   selSup: $('#selSupervisor'), selHub: $('#selHub'), aviso: $('#aviso'), painel: $('#painel'),
   quadro: $('#quadro'), titulo: $('#tituloPeriodo'), resumo: $('#resumoPeriodo'),
-  lista: $('#listaColaboradores'), dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo')
+  lista: $('#listaColaboradores'), dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
+  lembrete: $('#lembrete')
 };
 const mostrarStatus = criarStatus($('#status'));
 
@@ -30,7 +32,8 @@ const estado = {
   cancelar: null,
   chaveFaixa: '',
   diaAberto: null,   // dia aberto na janela (visão mensal)
-  diaSel: null       // dia mostrado no celular (visão semanal)
+  diaSel: null,      // dia mostrado no celular (visão semanal)
+  lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false }
 };
 
 function mostrarAviso(titulo, texto) {
@@ -895,6 +898,112 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ================= lembrete de prazo (seg/sex 14h–16h, vale para todos os hubs) =================
+// Regra: nada antes das 14h; contagem das 14h às 16h; "prazo encerrado" visível
+// pelas 24h seguintes; depois disso, some — até a próxima segunda ou sexta.
+// Usa a hora real do aparelho a cada verificação (não a hora do carregamento
+// da página), então funciona igual depois de recarregar ou noutro dispositivo.
+function ultimaOcorrencia(agora, diaSemana, hora) {
+  for (let i = 0; i < 8; i++) {
+    const d = addDays(agora, -i);
+    if (d.getDay() === diaSemana) {
+      const marca = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hora, 0, 0, 0);
+      if (marca <= agora) return marca;
+    }
+  }
+  return null;
+}
+function janelaLancamento(agora, diaSemana) {
+  const inicio = ultimaOcorrencia(agora, diaSemana, 14);
+  if (!inicio) return null;
+  const fimContagem = new Date(inicio.getTime() + 2 * 3600000);
+  const fimEncerrado = new Date(fimContagem.getTime() + 24 * 3600000);
+  if (agora < fimContagem) return { estado: 'contagem', inicio, fim: fimContagem, diaSemana };
+  if (agora < fimEncerrado) return { estado: 'encerrado', inicio, fim: fimContagem, diaSemana };
+  return null;
+}
+function janelaAtual() {
+  const agora = new Date();
+  return janelaLancamento(agora, 1) || janelaLancamento(agora, 5); // 1 = segunda, 5 = sexta
+}
+
+// "Lançada" = pelo menos uma vaga preenchida na semana-alvo, em qualquer hub.
+// "Completa" = nenhum buraco em nenhuma vaga necessária da semana-alvo.
+function materializarSemana(escalasMap, ini, fim) {
+  let temVaga = false, temBuraco = false, temNecessidade = false;
+  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+    const iso = isoDate(d);
+    const dow = d.getDay();
+    for (const hub of estado.cfg.hubs) {
+      for (const t of estado.cfg.turnos.filter((x) => x.hubId === hub.id)) {
+        if (!Number(t.vagas?.[dow])) continue;
+        temNecessidade = true;
+        for (const v of vagasDoTurno(estado.cfg, escalasMap, hub.id, t, iso, dow)) {
+          if (v.dispensada) continue;
+          if (!v.vazia) temVaga = true;
+          if (!v.coberta) temBuraco = true;
+        }
+      }
+    }
+  }
+  return { lancada: temVaga, completa: temNecessidade && !temBuraco };
+}
+
+function assinarLembrete(ini, fim) {
+  const chave = `${isoDate(ini)}|${isoDate(fim)}`;
+  if (chave === estado.lembrete.chaveFaixa) return;
+  estado.lembrete.chaveFaixa = chave;
+  estado.lembrete.cancelar?.();
+  estado.lembrete.escalas = {};
+  estado.lembrete.prontas = false;
+  estado.lembrete.cancelar = ouvirEscalas(isoDate(ini), isoDate(fim), (mapa) => {
+    estado.lembrete.escalas = mapa;
+    estado.lembrete.prontas = true;
+    montarLembrete();
+  }, () => {});
+}
+
+function tituloSemana(ini, fim) {
+  return `${ini.getDate()}/${ini.getMonth() + 1} a ${fim.getDate()}/${fim.getMonth() + 1}`;
+}
+
+function montarLembrete() {
+  if (!el.lembrete || !estado.cfg) return;
+  const janela = janelaAtual();
+  if (!janela) { el.lembrete.hidden = true; return; }
+
+  const semanaAlvoIni = janela.diaSemana === 1 ? startOfWeek(janela.inicio) : addDays(startOfWeek(janela.inicio), 7);
+  const semanaAlvoFim = addDays(semanaAlvoIni, 6);
+  assinarLembrete(semanaAlvoIni, semanaAlvoFim);
+  const txtSemana = tituloSemana(semanaAlvoIni, semanaAlvoFim);
+
+  el.lembrete.hidden = false;
+  if (!estado.lembrete.prontas) {
+    el.lembrete.className = 'lembrete';
+    el.lembrete.innerHTML = '<span>Verificando a escala…</span>';
+    return;
+  }
+  const { lancada, completa } = materializarSemana(estado.lembrete.escalas, semanaAlvoIni, semanaAlvoFim);
+  const situacao = completa
+    ? 'Cobertura completa.'
+    : (lancada ? 'Escala lançada, mas ainda com vagas descobertas.' : 'Escala ainda não lançada.');
+
+  if (janela.estado === 'contagem') {
+    const restante = janela.fim.getTime() - Date.now();
+    const h = Math.max(0, Math.floor(restante / 3600000));
+    const m = Math.max(0, Math.floor((restante % 3600000) / 60000));
+    el.lembrete.className = `lembrete lembrete-contagem ${completa ? 'lembrete-ok' : 'lembrete-alerta'}`;
+    el.lembrete.innerHTML = `<strong>Prazo até 16h para lançar a escala da semana de ${txtSemana}</strong>
+      <span>Faltam ${h}h${String(m).padStart(2, '0')} · ${situacao}</span>`;
+  } else {
+    el.lembrete.className = `lembrete lembrete-fechado ${completa ? 'lembrete-ok' : 'lembrete-alerta'}`;
+    el.lembrete.innerHTML = `<strong>Prazo encerrado</strong>
+      <span>Semana de ${txtSemana}: ${situacao}</span>`;
+  }
+}
+
+setInterval(montarLembrete, 30000);
+
 // ================= início =================
 if (!configuracaoPronta()) {
   el.selSup.disabled = true;
@@ -909,5 +1018,6 @@ if (!configuracaoPronta()) {
     renderSeletores();
     assinarEscalas();
     render();
+    montarLembrete();
   }, erroLeitura);
 }
