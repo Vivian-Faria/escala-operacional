@@ -1,12 +1,11 @@
-// Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e ponto.
-import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, ouvirPontos } from './db.js';
+// Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
+import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas } from './db.js';
 import { entrar, sair, aoMudarLogin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
   ordenaTurnos, faixaDoDia, vagasSemana, plural, parseIso, isoDate, addDays, startOfWeek,
-  capitalizar, toMin, vagasDe, minutosDaParte, horas, criarStatus, vagasDoTurno, agregarBuracos,
-  hhmm
+  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, agregarBuracos, hhmm
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -22,15 +21,6 @@ let original = '';     // último estado salvo (para saber se há alterações)
 let aba = 'hubs';
 let hubTurnos = '';
 let filtroColab = '';
-
-// ---------- estado da conciliação de ponto ----------
-const ponto = {
-  hubId: '', modo: 'semana', ref: new Date(),
-  escalas: {}, pontos: {}, chaveFaixa: '',
-  escalasProntas: false, pontosProntas: false,
-  cancelarEscalas: null, cancelarPontos: null,
-  expandido: new Set()
-};
 
 // ---------- estado da aba "Buracos na escala" (vale para todos os hubs) ----------
 const buracosEstado = {
@@ -196,6 +186,24 @@ function opcoesTipo(atual) {
     .map(([v, r]) => `<option value="${v}"${v === atual ? ' selected' : ''}>${r}</option>`).join('');
 }
 
+// Copia texto para a área de transferência, com um jeito alternativo para
+// quando a API moderna não está disponível (ex: página aberta sem https).
+async function copiarTexto(texto) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(texto);
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.value = texto;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(area);
+  if (!ok) throw new Error('copia-falhou');
+}
+
 function cabecalho(titulo, texto) {
   return `<div class="secao-cab"><h2>${titulo}</h2><p>${texto}</p></div>`;
 }
@@ -214,7 +222,7 @@ function renderAba() {
     b.setAttribute('aria-selected', String(b.dataset.aba === aba));
   });
   ({ hubs: renderHubs, turnos: renderTurnos, supervisores: renderSupervisores,
-    colaboradores: renderColaboradores, datas: renderDatas, buracos: renderBuracos, ponto: renderPonto })[aba]();
+    colaboradores: renderColaboradores, datas: renderDatas, buracos: renderBuracos })[aba]();
 }
 
 // ---------- Hubs ----------
@@ -449,6 +457,24 @@ function apurarBuracos() {
   return dias;
 }
 
+// Mesma informação da lista, em texto simples, pronta para colar num grupo.
+function textoBuracos(dias, tituloPeriodo) {
+  if (!dias.length) return `Buracos na escala — ${tituloPeriodo}\n\nNenhum buraco em aberto nesse período.`;
+  const linhas = [`Buracos na escala — ${tituloPeriodo}`, ''];
+  for (const { dt, porHub } of dias) {
+    linhas.push(`${capitalizar(DIAS_LONGO[dt.getDay()])}, ${dt.getDate()} de ${MESES[dt.getMonth()]}`);
+    for (const { hub, linhas: linhasTurno } of porHub) {
+      linhas.push(`  ${hub.nome}`);
+      for (const { turno, agregados } of linhasTurno) {
+        const trechos = agregados.map(([a, b, n]) => `${hhmm(a)}–${hhmm(b)} (falta${n > 1 ? 'm' : ''} ${plural(n, 'pessoa', 'pessoas')})`).join(', ');
+        linhas.push(`    ${turno.nome}: ${trechos}`);
+      }
+    }
+    linhas.push('');
+  }
+  return linhas.join('\n').trim();
+}
+
 function htmlListaBuracos() {
   if (!buracosEstado.prontas) return '<p class="carregando">Carregando…</p>';
   const dias = apurarBuracos();
@@ -490,211 +516,21 @@ function renderBuracos() {
       <button type="button" class="chip" data-acao="buracos-hub" data-id="" aria-pressed="${!buracosEstado.hubId}">Todos os hubs</button>
       ${hubs.map((h) => `<button type="button" class="chip" data-acao="buracos-hub" data-id="${h.id}" aria-pressed="${h.id === buracosEstado.hubId}">${escapeHtml(h.nome)}</button>`).join('')}
     </div>
-    <div class="barra-ponto">
+    <div class="barra-periodo">
       <div class="nav-periodo">
         <button type="button" class="btn-icone" data-acao="buracos-anterior" aria-label="Período anterior">‹</button>
         <button type="button" class="btn-icone" data-acao="buracos-proximo" aria-label="Próximo período">›</button>
         <h3>${tituloPeriodoBuracos()}</h3>
       </div>
-      <div class="alternador" role="group" aria-label="Visualização">
-        <button type="button" data-acao="buracos-modo" data-valor="semana" aria-pressed="${buracosEstado.modo === 'semana'}">Semana</button>
-        <button type="button" data-acao="buracos-modo" data-valor="mes" aria-pressed="${buracosEstado.modo === 'mes'}">Mês</button>
+      <div class="barra-dir">
+        <button type="button" class="btn-texto" data-acao="buracos-copiar">Copiar lista</button>
+        <div class="alternador" role="group" aria-label="Visualização">
+          <button type="button" data-acao="buracos-modo" data-valor="semana" aria-pressed="${buracosEstado.modo === 'semana'}">Semana</button>
+          <button type="button" data-acao="buracos-modo" data-valor="mes" aria-pressed="${buracosEstado.modo === 'mes'}">Mês</button>
+        </div>
       </div>
     </div>
     <div id="buracosLista">${htmlListaBuracos()}</div>`;
-}
-
-// ---------- Ponto: previsto (escala) vs batido (registro com foto) ----------
-function faixaPonto() {
-  if (ponto.modo === 'semana') {
-    const ini = startOfWeek(ponto.ref);
-    return { ini, fim: addDays(ini, 6) };
-  }
-  const primeiro = new Date(ponto.ref.getFullYear(), ponto.ref.getMonth(), 1);
-  const ultimo = new Date(ponto.ref.getFullYear(), ponto.ref.getMonth() + 1, 0);
-  return { ini: primeiro, fim: ultimo, primeiro };
-}
-
-function assinarPonto() {
-  const { ini, fim } = faixaPonto();
-  const chave = `${ponto.hubId}|${isoDate(ini)}|${isoDate(fim)}`;
-  if (chave === ponto.chaveFaixa) return;
-  ponto.chaveFaixa = chave;
-  ponto.cancelarEscalas?.();
-  ponto.cancelarPontos?.();
-  ponto.escalas = {};
-  ponto.pontos = {};
-  ponto.escalasProntas = false;
-  ponto.pontosProntas = false;
-  if (!ponto.hubId) return;
-  const iniIso = isoDate(ini), fimIso = isoDate(fim);
-  ponto.cancelarEscalas = ouvirEscalas(iniIso, fimIso, (m) => { ponto.escalas = m; ponto.escalasProntas = true; renderPonto(); },
-    () => mostrarStatus('Não foi possível carregar a escala do período.', 'erro', true));
-  ponto.cancelarPontos = ouvirPontos(iniIso, fimIso, (m) => { ponto.pontos = m; ponto.pontosProntas = true; renderPonto(); },
-    () => mostrarStatus('Não foi possível carregar os registros de ponto.', 'erro', true));
-}
-
-// Minutos batidos num dia, a partir das 4 marcações. Cobre o que existir,
-// mesmo com o dia incompleto.
-function minutosBatidos(reg) {
-  if (!reg) return { minutos: 0, completo: false, algum: false };
-  const par = (a, b) => {
-    if (!reg[a]?.hora || !reg[b]?.hora) return null;
-    let d = toMin(reg[b].hora) - toMin(reg[a].hora);
-    if (d < 0) d += 1440;
-    return d;
-  };
-  const manha = par('chegada', 'saidaAlmoco');
-  const tarde = par('voltaAlmoco', 'saida');
-  const algum = Boolean(reg.chegada?.hora || reg.saidaAlmoco?.hora || reg.voltaAlmoco?.hora || reg.saida?.hora);
-  return {
-    minutos: (manha || 0) + (tarde || 0),
-    completo: Boolean(reg.chegada?.hora && reg.saidaAlmoco?.hora && reg.voltaAlmoco?.hora && reg.saida?.hora),
-    algum
-  };
-}
-
-// Junta, por colaborador, quanto foi previsto na escala e quanto foi batido
-// no ponto, dia a dia, no hub e período escolhidos.
-function apurarPonto() {
-  const { ini, fim } = faixaPonto();
-  const turnos = cfg.turnos.filter((t) => t.hubId === ponto.hubId);
-  const pessoas = new Map(); // chave normalizada -> { nome, dias: Map(iso -> {previsto, turnos:[], batido, completo, algumBatido, registros}) }
-
-  const linha = (chave, nome) => {
-    if (!pessoas.has(chave)) pessoas.set(chave, { nome, dias: new Map() });
-    return pessoas.get(chave);
-  };
-  const diaDe = (p, iso) => {
-    if (!p.dias.has(iso)) p.dias.set(iso, { previsto: 0, turnos: [], batido: 0, completo: false, algumBatido: false, registros: null });
-    return p.dias.get(iso);
-  };
-
-  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
-    const iso = isoDate(d);
-    const escala = ponto.escalas[`${ponto.hubId}_${iso}`];
-    for (const t of turnos) {
-      const slot = escala?.slots?.[t.id];
-      if (!slot) continue;
-      for (const partes of vagasDe(slot)) {
-        for (const parte of partes) {
-          if (!parte.nome) continue;
-          const chave = normalizaNome(parte.nome);
-          const dObj = diaDe(linha(chave, parte.nome), iso);
-          dObj.previsto += minutosDaParte(t, parte);
-          dObj.turnos.push({ nome: t.nome, inicio: parte.inicio || t.inicio, fim: parte.fim || t.fim });
-        }
-      }
-    }
-    const registros = ponto.pontos[`${ponto.hubId}_${iso}`]?.registros || {};
-    for (const [chave, reg] of Object.entries(registros)) {
-      const p = linha(chave, reg.nome || chave);
-      const dObj = diaDe(p, iso);
-      const { minutos, completo, algum } = minutosBatidos(reg);
-      dObj.batido = minutos;
-      dObj.completo = completo;
-      dObj.algumBatido = algum;
-      dObj.registros = reg;
-    }
-  }
-  return [...pessoas.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-}
-
-function tituloPeriodoPonto() {
-  const { ini, fim, primeiro } = faixaPonto();
-  if (ponto.modo === 'mes') return `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
-  const a = ini.getDate(), b = fim.getDate();
-  return ini.getMonth() === fim.getMonth()
-    ? `${a} a ${b} de ${MESES[fim.getMonth()]}`
-    : `${a} de ${MESES[ini.getMonth()]} a ${b} de ${MESES[fim.getMonth()]}`;
-}
-
-function horaOuTraco(reg, campo) {
-  if (!reg?.[campo]?.hora) return '<span class="hora-vazia">—</span>';
-  return reg[campo].fotoUrl
-    ? `<a class="hora-batida" href="${escapeHtml(reg[campo].fotoUrl)}" target="_blank" rel="noopener" title="Ver foto">${reg[campo].hora}</a>`
-    : `<span class="hora-batida-sf">${reg[campo].hora}</span>`;
-}
-
-function linhaDia(iso, dObj) {
-  const dt = parseIso(iso);
-  const diff = dObj.batido - dObj.previsto;
-  const relevante = dObj.previsto > 0 || dObj.algumBatido;
-  if (!relevante) return '';
-  const alerta = dObj.previsto > 0 && dObj.algumBatido && !dObj.completo;
-  const grande = Math.abs(diff) >= 30 && dObj.previsto > 0 && dObj.completo;
-  return `<tr class="${alerta ? 'linha-alerta' : ''} ${grande ? 'linha-diverge' : ''}">
-    <td>${DIAS_CURTO[dt.getDay()]} ${dt.getDate()}</td>
-    <td>${dObj.previsto ? `${horas(dObj.previsto)}<span class="turnos-dia">${dObj.turnos.map((t) => escapeHtml(t.nome)).join(', ')}</span>` : '<span class="hora-vazia">Sem escala</span>'}</td>
-    <td>${horaOuTraco(dObj.registros, 'chegada')}</td>
-    <td>${horaOuTraco(dObj.registros, 'saidaAlmoco')}</td>
-    <td>${horaOuTraco(dObj.registros, 'voltaAlmoco')}</td>
-    <td>${horaOuTraco(dObj.registros, 'saida')}</td>
-    <td>${dObj.algumBatido ? (dObj.completo ? horas(dObj.batido) : '<span class="hora-vazia">Incompleto</span>') : '<span class="hora-vazia">—</span>'}</td>
-    <td class="col-diff">${dObj.previsto && dObj.completo ? `<span class="${diff < -15 ? 'diff-neg' : diff > 15 ? 'diff-pos' : ''}">${diff > 0 ? '+' : ''}${horas(diff)}</span>` : '—'}</td>
-  </tr>`;
-}
-
-function renderPonto() {
-  const hubs = hubsOrdenados();
-  if (!hubs.length) {
-    el.conteudo.innerHTML = `${cabecalho('Ponto', 'Compara o horário previsto na escala com o horário batido no ponto.')}<p class="vazio">Cadastre um hub primeiro, na aba Hubs.</p>`;
-    return;
-  }
-  if (!hubs.some((h) => h.id === ponto.hubId)) ponto.hubId = hubs[0].id;
-  assinarPonto();
-
-  el.conteudo.innerHTML = `
-    ${cabecalho('Ponto', 'Compara o horário que os supervisores lançaram na escala com o horário que cada colaborador bateu no ponto, com foto. Fica só aqui, dentro de Cadastros.')}
-    <div class="chips chips-hub" role="group" aria-label="Hub">
-      ${hubs.map((h) => `<button type="button" class="chip" data-acao="ponto-hub" data-id="${h.id}" aria-pressed="${h.id === ponto.hubId}">${escapeHtml(h.nome)}</button>`).join('')}
-    </div>
-    <div class="barra-ponto">
-      <div class="nav-periodo">
-        <button type="button" class="btn-icone" data-acao="ponto-anterior" aria-label="Período anterior">‹</button>
-        <button type="button" class="btn-icone" data-acao="ponto-proximo" aria-label="Próximo período">›</button>
-        <h3>${tituloPeriodoPonto()}</h3>
-      </div>
-      <div class="alternador" role="group" aria-label="Visualização">
-        <button type="button" data-acao="ponto-modo" data-valor="semana" aria-pressed="${ponto.modo === 'semana'}">Semana</button>
-        <button type="button" data-acao="ponto-modo" data-valor="mes" aria-pressed="${ponto.modo === 'mes'}">Mês</button>
-      </div>
-    </div>
-    <div id="pontoLista">${htmlListaPonto()}</div>
-    <p class="dica">Toque num horário batido para ver a selfie. "Incompleto" é dia com alguma batida faltando; a diferença só é calculada quando as 4 batidas existem.</p>`;
-}
-
-function htmlListaPonto() {
-  if (!ponto.escalasProntas || !ponto.pontosProntas) return '<p class="carregando">Carregando…</p>';
-  const pessoas = apurarPonto();
-  if (!pessoas.length) return '<p class="vazio">Sem escala ou ponto lançados neste hub e período.</p>';
-
-  return pessoas.map((p) => {
-    const chave = normalizaNome(p.nome);
-    const dias = [...p.dias.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const totalPrevisto = dias.reduce((s, [, d]) => s + d.previsto, 0);
-    const totalBatido = dias.reduce((s, [, d]) => s + (d.completo ? d.batido : 0), 0);
-    const diasComPrevisto = dias.filter(([, d]) => d.previsto > 0).length;
-    const diasIncompletos = dias.filter(([, d]) => d.previsto > 0 && d.algumBatido && !d.completo).length;
-    const linhas = dias.map(([iso, d]) => linhaDia(iso, d)).join('');
-    if (!linhas.trim()) return '';
-    const aberto = ponto.expandido.has(chave);
-    return `<details class="pessoa-ponto" data-chave="${chave}" ${aberto ? 'open' : ''}>
-      <summary>
-        <span class="pessoa-nome">${escapeHtml(p.nome)}</span>
-        <span class="pessoa-resumo">
-          <span>${plural(diasComPrevisto, 'dia escalado', 'dias escalados')}</span>
-          <span>Previsto ${horas(totalPrevisto)}</span>
-          <span>Batido ${horas(totalBatido)}</span>
-          ${diasIncompletos ? `<span class="pilula pilula-pendente">${plural(diasIncompletos, 'dia incompleto', 'dias incompletos')}</span>` : ''}
-        </span>
-      </summary>
-      <div class="tabela-rolagem"><table class="tabela-ponto">
-        <thead><tr><th>Dia</th><th>Previsto</th><th>Chegada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Batido</th><th>Diferença</th></tr></thead>
-        <tbody>${linhas}</tbody>
-      </table></div>
-    </details>`;
-  }).join('') || '<p class="vazio">Sem escala ou ponto lançados neste hub e período.</p>';
 }
 
 // ================= eventos do conteúdo =================
@@ -866,23 +702,11 @@ el.conteudo.addEventListener('click', (e) => {
       renderBuracos();
       return;
     }
-    case 'ponto-hub':
-      ponto.hubId = id;
-      ponto.chaveFaixa = '';
-      renderPonto();
-      return;
-    case 'ponto-modo':
-      ponto.modo = b.dataset.valor;
-      ponto.chaveFaixa = '';
-      renderPonto();
-      return;
-    case 'ponto-anterior':
-    case 'ponto-proximo': {
-      const passo = acao === 'ponto-proximo' ? 1 : -1;
-      ponto.ref = ponto.modo === 'semana' ? addDays(ponto.ref, passo * 7)
-        : new Date(ponto.ref.getFullYear(), ponto.ref.getMonth() + passo, 1);
-      ponto.chaveFaixa = '';
-      renderPonto();
+    case 'buracos-copiar': {
+      const texto = textoBuracos(apurarBuracos(), tituloPeriodoBuracos());
+      copiarTexto(texto)
+        .then(() => mostrarStatus('Lista copiada — já pode colar no grupo.'))
+        .catch(() => mostrarStatus('Não foi possível copiar. Tente selecionar e copiar manualmente.', 'erro', true));
       return;
     }
     default:
@@ -892,12 +716,3 @@ el.conteudo.addEventListener('click', (e) => {
   marcar();
   if (focar) el.conteudo.querySelector(focar)?.focus();
 });
-
-// O evento "toggle" de <details> não borbulha; escutamos na fase de captura
-// para lembrar quem está aberto quando a lista de ponto se atualiza sozinha.
-el.conteudo.addEventListener('toggle', (e) => {
-  const det = e.target.closest?.('.pessoa-ponto');
-  if (!det) return;
-  if (det.open) ponto.expandido.add(det.dataset.chave);
-  else ponto.expandido.delete(det.dataset.chave);
-}, true);

@@ -963,10 +963,6 @@ function assinarLembrete(ini, fim) {
   }, () => {});
 }
 
-function tituloSemana(ini, fim) {
-  return `${ini.getDate()}/${ini.getMonth() + 1} a ${fim.getDate()}/${fim.getMonth() + 1}`;
-}
-
 function montarLembrete() {
   if (!el.lembrete || !estado.cfg) return;
   const janela = janelaAtual();

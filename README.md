@@ -1,14 +1,11 @@
 # Escala de turnos
 
-Sistema simples de lançamento de escala, com três páginas:
+Sistema simples de lançamento de escala, com duas páginas:
 
-- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores, feriados/datas especiais, os buracos abertos na escala e a conciliação do ponto.
+- **`cadastros.html`** (protegida por senha): hubs, turnos com vagas por dia da semana, supervisores, colaboradores, feriados/datas especiais e os buracos abertos na escala.
 - **`index.html`** (link dos supervisores): o supervisor escolhe o nome e o hub, vê o calendário com as vagas e lança quem está em cada turno, se é fixo, freelancer ou intermitente, e as folgas e faltas.
-- **`ponto.html`** (link dos colaboradores, sem senha): cada um registra a própria chegada, saída para o almoço, volta do almoço e saída, com uma selfie a cada batida.
 
-Os dados de texto ficam no Firebase (Firestore). As selfies do ponto ficam no **Cloudinary**, num plano gratuito que não pede cartão de crédito. O site é 100% estático e roda no Netlify sem build.
-
-> **Aviso importante:** o Ponto desta ferramenta é um controle interno, para comparar o previsto com o realizado e ter uma base de horas trabalhadas. Ele **não substitui** um sistema de ponto eletrônico oficial, caso a empresa já tenha um homologado conforme a legislação trabalhista (Portaria 671/2021).
+Os dados ficam no Firebase (Firestore). O site é 100% estático e roda no Netlify sem build.
 
 ---
 
@@ -33,32 +30,19 @@ Os dados de texto ficam no Firebase (Firestore). As selfies do ponto ficam no **
 1. Abra o arquivo **`firestore.rules`** e troque o e-mail de exemplo pelo seu e-mail de admin.
 2. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
 
-Com isso: qualquer pessoa com o link vê e preenche a escala e bate o próprio ponto, mas só o administrador altera os cadastros.
+Com isso: qualquer pessoa com o link vê e preenche a escala, mas só o administrador altera os cadastros.
 
-## 4. Criar a conta do Cloudinary (guarda as selfies do ponto, de graça)
-
-O Firebase Storage passou a exigir cartão de crédito para ser ativado, então as fotos do ponto usam o **Cloudinary**, que tem um plano gratuito sem cartão (25 GB por mês entre armazenamento e visualização — muito acima do que um ponto de equipe gera).
-
-1. Crie uma conta gratuita em https://cloudinary.com/users/register/free (dá para entrar com o Google, não pede cartão).
-2. No painel, clique na engrenagem **Settings → Upload**. Em "Upload presets", clique em **Add upload preset**.
-3. Configure: **Signing Mode: Unsigned**, e em **Folder** coloque `pontos`. Salve.
-4. Copie o **nome do preset** que você acabou de criar.
-5. No topo do painel (Dashboard), copie o **Cloud name**.
-6. Abra o arquivo **`cloudinary-config.js`** e cole os dois valores.
-
-## 5. Subir no GitHub e no Netlify
+## 4. Subir no GitHub e no Netlify
 
 1. No repositório do GitHub, clique em **Add file → Upload files**, selecione todos os arquivos de uma vez e confirme.
 2. No Netlify: **Add new site → Import an existing project → GitHub** e escolha o repositório.
 3. Deixe **Build command** vazio e **Publish directory** como `.` (o `netlify.toml` já faz isso).
 4. Após o deploy, se o login mostrar erro de domínio, adicione o endereço `seusite.netlify.app` em **Authentication → Configurações → Domínios autorizados** (no Firebase).
 
-## 6. Usar
+## 5. Usar
 
 1. Abra `seusite.netlify.app/cadastros.html`, entre com a senha e cadastre, nesta ordem: hubs, turnos e vagas, supervisores, colaboradores e datas da cidade. Clique em **Salvar alterações**.
 2. Envie `seusite.netlify.app` aos supervisores, para a escala. Depois que ele escolhe nome e hub, o endereço na barra do navegador já guarda a escolha — dá para salvar nos favoritos ou na tela inicial do celular.
-3. Envie `seusite.netlify.app/ponto.html` aos colaboradores, para o ponto. Mesma lógica: depois de digitar o nome uma vez, o celular lembra.
-4. A conciliação fica em **Cadastros → aba Ponto**.
 
 ---
 
@@ -77,24 +61,14 @@ O Firebase Storage passou a exigir cartão de crédito para ser ativado, então 
 | Conflitos | Aviso em vermelho se a mesma pessoa estiver em dois turnos que se sobrepõem (inclusive em hubs diferentes) ou escalada num turno em que está de folga |
 | Feriados | Nacionais e datas comemorativas calculados automaticamente (Carnaval, Páscoa, Dia das Mães, Black Friday etc.); feriados da cidade são cadastrados na página 1 |
 | Tempo real | Se duas pessoas estiverem com a mesma página aberta, uma vê o que a outra lança sem recarregar |
-| Ponto por selfie | Na página `ponto.html`, sempre o dia de hoje: 4 passos em ordem (chegada, saída para o almoço, volta do almoço, saída). Cada um abre a câmera do celular, tira a foto e grava o horário do toque. Dá para corrigir uma batida errada a qualquer momento |
-| Conciliação do ponto | Em Cadastros → aba Ponto: por hub e por período (semana ou mês), mostra cada colaborador com o total previsto na escala e o total batido, e por dia as 4 horas batidas, o total do dia e a diferença. Toque num horário para abrir a selfie daquela batida |
-| Buracos na escala | Em Cadastros → aba "Buracos na escala": por hub (ou todos juntos) e por período (semana ou mês), lista os trechos de horário que ainda não têm gente suficiente, turno por turno, somando vagas vazias e vagas parcialmente cobertas |
+| Buracos na escala | Em Cadastros → aba "Buracos na escala": por hub (ou todos juntos) e por período (semana ou mês), lista os trechos de horário que ainda não têm gente suficiente, turno por turno, somando vagas vazias e vagas parcialmente cobertas. O botão "Copiar lista" copia tudo em texto simples, pronto para colar num grupo |
 | Lembrete de prazo | Na página da escala, toda segunda e sexta das 14h às 16h aparece uma faixa com a contagem regressiva para lançar a escala (segunda = semana atual, sexta = semana seguinte) e se já está lançada/completa; depois das 16h, mostra "Prazo encerrado" por 24h com a mesma informação; fora dessas janelas, some. Vale para todos os hubs juntos e usa a hora real do aparelho, então funciona igual em qualquer dispositivo ou depois de recarregar |
-
-### Sobre a privacidade das fotos
-
-As fotos ficam no Cloudinary. Diferente de um cofre com senha, o link de cada foto funciona para quem o tiver — mas esse link só aparece dentro da aba Ponto de Cadastros, que exige a senha de administrador para ser aberta. Ele não fica visível em nenhuma tela pública, nem para quem bateu o ponto. Vale avisar os colaboradores que a selfie é usada só para esse controle interno.
-
-Se um dia quiser um controle mais rígido (o link não funcionar para ninguém fora do admin), a alternativa é voltar ao Firebase Storage — que exige o plano pago (Blaze) do Firebase, mas com custo próximo de zero para esse volume de fotos.
 
 ### Estrutura dos dados
 
 - `config/principal`: todos os cadastros (um documento só).
 - `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
   Cada vaga guarda uma lista de pessoas: `{partes: [{nome, tipo, inicio, fim}]}`. Sem `inicio`/`fim`, a pessoa cobre o turno inteiro.
-- `pontos/{hubId}_{AAAA-MM-DD}`: as batidas do dia de cada colaborador naquele hub — `{registros: {nomeNormalizado: {nome, chegada: {hora, fotoUrl}, saidaAlmoco: {...}, voltaAlmoco: {...}, saida: {...}}}}`.
-- Cloudinary, pasta `pontos/{hubId}/{AAAA-MM-DD}/{nomeNormalizado}/`: as selfies de cada batida.
 
 ### Arquivos
 
@@ -102,17 +76,14 @@ Todos ficam soltos na raiz do repositório (sem pastas):
 
 ```
 index.html            página 2 — escala dos supervisores
-cadastros.html        página 1 — cadastros (com senha) e conciliação do ponto
-ponto.html            página 3 — registro de ponto por selfie
+cadastros.html        página 1 — cadastros e buracos na escala
 style.css
 firebase-config.js    ← edite com os dados do seu projeto Firebase
-cloudinary-config.js  ← edite com os dados da sua conta Cloudinary
-db.js                 leitura e gravação no Firestore, e envio das fotos ao Cloudinary
+db.js                 leitura e gravação no Firestore
 auth.js               login do administrador
 feriados.js           feriados nacionais e datas comemorativas
 escala.js             lógica da página 2
-cadastros.js          lógica da página 1 (cadastros + conciliação do ponto)
-ponto.js              lógica da página 3
+cadastros.js          lógica da página 1 (cadastros + buracos na escala)
 utils.js
 firestore.rules       regras de segurança do Firestore (colar no Firebase)
 netlify.toml

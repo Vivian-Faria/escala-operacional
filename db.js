@@ -1,16 +1,12 @@
-// Acesso ao Firestore (dados) e ao Cloudinary (fotos do ponto, plano gratuito
-// sem cartão). Lugares que guardam tudo:
+// Acesso ao Firestore. Lugares que guardam tudo:
 //   config/principal             → hubs, turnos (com vagas), supervisores, colaboradores, datas especiais
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
-//   pontos/{hubId}_{AAAA-MM-DD}  → horário batido por cada colaborador naquele hub e dia, com o link da selfie
-//   Cloudinary, pasta pontos/{hubId}/{AAAA-MM-DD}/{nome}/ → as selfies em si
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, serverTimestamp,
   arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
-import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from './cloudinary-config.js';
 
 let app;
 let db;
@@ -25,11 +21,6 @@ export function obterApp() {
 function obterDb() {
   if (!db) db = getFirestore(obterApp());
   return db;
-}
-
-export function cloudinaryConfigurado() {
-  return Boolean(CLOUDINARY_CLOUD_NAME) && !CLOUDINARY_CLOUD_NAME.startsWith('COLE')
-    && Boolean(CLOUDINARY_UPLOAD_PRESET) && !CLOUDINARY_UPLOAD_PRESET.startsWith('COLE');
 }
 
 const refConfig = () => doc(obterDb(), 'config', 'principal');
@@ -114,60 +105,4 @@ export async function removerAusencia(hubId, dataIso, turnoId, nome, campo, supe
     atualizadoPor: supervisor,
     atualizadoEm: serverTimestamp()
   }, { merge: true });
-}
-
-// ================= Ponto (registro de horário com foto) =================
-const refPonto = (hubId, dataIso) => doc(obterDb(), 'pontos', `${hubId}_${dataIso}`);
-
-// Envia a selfie ao Cloudinary (upload sem login, liberado pelo preset
-// "unsigned" configurado na conta) e devolve o link direto da foto.
-export async function enviarFotoPonto(hubId, dataIso, nomeChave, campo, blob) {
-  const dados = new FormData();
-  dados.append('file', blob, `${campo}.jpg`);
-  dados.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  dados.append('public_id', `${hubId}/${dataIso}/${nomeChave}/${campo}-${Date.now()}`);
-
-  const resposta = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-    method: 'POST', body: dados
-  });
-  if (!resposta.ok) {
-    const erro = new Error('Falha ao enviar a foto ao Cloudinary');
-    erro.code = resposta.status === 401 || resposta.status === 400 ? 'cloudinary/preset-invalido' : 'cloudinary/erro';
-    throw erro;
-  }
-  const corpo = await resposta.json();
-  return { url: corpo.secure_url };
-}
-
-// Acompanha o registro de UM colaborador num dia (usado na página de Ponto,
-// para saber o que já foi batido e não deixar bater de novo sem querer).
-export function ouvirPontoDoDia(hubId, dataIso, nomeChave, aoReceber, aoErrar) {
-  return onSnapshot(refPonto(hubId, dataIso), (snap) => {
-    const registros = snap.exists() ? (snap.data().registros || {}) : {};
-    aoReceber(registros[nomeChave] || null);
-  }, aoErrar);
-}
-
-// Grava uma batida (chegada, saídaAlmoço, voltaAlmoço ou saída).
-export async function salvarBatida(hubId, dataIso, nomeChave, nome, campo, hora, foto) {
-  await setDoc(refPonto(hubId, dataIso), {
-    hubId,
-    data: dataIso,
-    registros: { [nomeChave]: { nome, [campo]: { hora, fotoUrl: foto.url } } },
-    atualizadoEm: serverTimestamp()
-  }, { merge: true });
-}
-
-// Todos os registros de ponto do período (usado na conciliação em Cadastros).
-export function ouvirPontos(inicioIso, fimIso, aoReceber, aoErrar) {
-  const q = query(
-    collection(obterDb(), 'pontos'),
-    where('data', '>=', inicioIso),
-    where('data', '<=', fimIso)
-  );
-  return onSnapshot(q, (snap) => {
-    const mapa = {};
-    snap.forEach((d) => { mapa[d.id] = d.data(); });
-    aoReceber(mapa);
-  }, aoErrar);
 }
