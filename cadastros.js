@@ -5,7 +5,7 @@ import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
   ordenaTurnos, faixaDoDia, vagasSemana, plural, parseIso, isoDate, addDays, startOfWeek,
-  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, agregarBuracos, hhmm
+  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, agregarBuracos, hhmm, nomeParecido
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -701,9 +701,29 @@ function apurarIndicadores() {
   const { ini, fim } = faixaIndicadores();
   const hubs = indicadoresEstado.hubId ? hubsOrdenados().filter((h) => h.id === indicadoresEstado.hubId) : hubsOrdenados();
   const porPessoa = new Map();
-  const pessoa = (nome) => {
-    const chave = normalizaNome(nome);
-    if (!porPessoa.has(chave)) porPessoa.set(chave, { nome, hubs: new Set(), escalado: 0, confirmados: 0, sim: 0, nao: 0 });
+  // Nomes cadastrados são a referência: uma grafia parecida com uma delas
+  // junta-se a essa pessoa, usando o nome do cadastro para exibir. Quem não
+  // bate com nenhum cadastro ainda junta com uma grafia parecida já vista
+  // nesta mesma apuração (ex.: lançamentos antigos, de alguém removido).
+  const nomesCadastro = (cfg.colaboradores || []).map((c) => c.nome);
+  const nomesVistos = [];
+  const chaveCanonica = (nomeBruto) => {
+    const direta = normalizaNome(nomeBruto);
+    if (porPessoa.has(direta)) return direta;
+    const doCadastro = nomeParecido(nomeBruto, nomesCadastro);
+    if (doCadastro) return normalizaNome(doCadastro);
+    const parecido = nomeParecido(nomeBruto, nomesVistos);
+    if (parecido) return normalizaNome(parecido);
+    return direta;
+  };
+  const pessoa = (nomeBruto) => {
+    const chave = chaveCanonica(nomeBruto);
+    if (!porPessoa.has(chave)) {
+      const doCadastro = nomesCadastro.find((n) => normalizaNome(n) === chave);
+      const nomeExibicao = doCadastro || nomeBruto;
+      nomesVistos.push(nomeExibicao);
+      porPessoa.set(chave, { nome: nomeExibicao, hubs: new Set(), escalado: 0, confirmados: 0, sim: 0, nao: 0 });
+    }
     return porPessoa.get(chave);
   };
 

@@ -259,7 +259,12 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .parte { display: flex; flex-direction: column; gap: 4px; }
 .vaga.dividida .parte + .parte { padding-top: 7px; border-top: 1px dashed var(--linha-forte); }
 .parte-nome { display: flex; align-items: center; gap: 3px; }
-.parte-nome input { flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 13.5px; border-radius: var(--raio-p); }
+.parte-nome select {
+  flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 26px 6px 8px; font-size: 13.5px;
+  border-radius: var(--raio-p); appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) center, calc(100% - 10px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
 .btn-tirar {
   flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%;
   background: none; color: var(--grafite); font-size: 16px; line-height: 1;
@@ -267,22 +272,20 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .btn-tirar:hover { background: var(--linha); color: var(--tinta); }
 
 /* Horário descoberto: vermelho forte, é o que o supervisor precisa ver primeiro */
-.vaga.descoberta .parte-nome input {
-  background: var(--furo-fundo); border: 2px solid var(--furo);
+.vaga.descoberta .parte-nome select {
+  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 700;
 }
-.vaga.descoberta .parte-nome input::placeholder { color: var(--furo-texto); font-weight: 700; opacity: 1; }
-.passado .vaga.descoberta .parte-nome input { border-width: 1px; border-style: dashed; }
-.passado .vaga.descoberta .parte-nome input::placeholder { font-weight: 500; }
-.vaga.ocupada .parte-nome input { border: 1px solid var(--linha-forte); background: var(--superficie); font-weight: 600; }
+.passado .vaga.descoberta .parte-nome select { border-width: 1px; border-style: dashed; font-weight: 500; }
+.vaga.ocupada .parte-nome select { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
 /* Dentro de uma vaga dividida, cada pessoa tem o seu próprio estado */
-.vaga.dividida .parte-nome input { border: 1px solid var(--linha-forte); background: var(--superficie); font-weight: 600; }
-.vaga.dividida .parte-nome input:placeholder-shown {
-  background: var(--furo-fundo); border: 2px solid var(--furo); font-weight: 500;
+.vaga.dividida .parte-nome select { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
+.vaga.dividida .parte-nome select.vazio {
+  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 500;
 }
 
 /* Quem faltou: nome riscado e horário de volta para a fila */
-.parte.faltou .parte-nome input {
-  background: var(--furo-fundo); border: 2px solid var(--furo);
+.parte.faltou .parte-nome select {
+  background-color: var(--furo-fundo); border: 2px solid var(--furo);
   color: var(--furo-texto); text-decoration: line-through; font-weight: 600;
 }
 .vaga-furo { margin: 0; font-size: 12px; font-weight: 700; color: var(--furo-texto); }
@@ -310,7 +313,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .vaga.ocupada:not(.dividida) .btn-dividir, .passado .btn-dividir { opacity: .55; }
 .vaga.ocupada:not(.dividida) .btn-dividir:hover { opacity: 1; }
 
-.vaga.conflito .parte-nome input { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
+.vaga.conflito .parte-nome select { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
 .vaga-alerta { margin: 0; font-size: 12px; line-height: 1.3; color: var(--conflito); font-weight: 600; }
 
 .tipo { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
@@ -339,9 +342,12 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   margin: 0; font-size: 12px; font-weight: 600; color: var(--grafite);
   padding: 3px 7px; border-radius: var(--raio-p); background: var(--papel);
 }
-.vaga.dispensada input {
-  min-height: 36px; padding: 6px 8px; font-size: 13.5px; border-radius: var(--raio-p);
+.vaga.dispensada select {
+  min-height: 36px; padding: 6px 26px 6px 8px; font-size: 13.5px; border-radius: var(--raio-p);
   border: 1px dashed var(--linha-forte); background: var(--superficie);
+  appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) center, calc(100% - 10px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
 }
 .n-dispensa {
   color: var(--grafite); font-style: italic; font-weight: 500;
@@ -371,9 +377,14 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 
 /* Nas colunas da semana, o nome fica numa linha e os botões embaixo */
 .aus-add { display: flex; flex-wrap: wrap; gap: 3px; }
-.aus-add input { flex: 1 1 100%; min-width: 0; min-height: 32px; padding: 4px 7px; font-size: 13px; border-color: var(--linha); }
+.aus-add select {
+  flex: 1 1 100%; min-width: 0; min-height: 32px; padding: 4px 24px 4px 7px; font-size: 13px; border-color: var(--linha);
+  border-radius: var(--raio-p); background-color: var(--superficie); appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 13px) center, calc(100% - 9px) center; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
 .dia-unico .aus-add, .dlg-dia .aus-add { flex-wrap: nowrap; }
-.dia-unico .aus-add input, .dlg-dia .aus-add input { flex: 1 1 auto; }
+.dia-unico .aus-add select, .dlg-dia .aus-add select { flex: 1 1 auto; }
 .aus-add button {
   flex: 1 1 0; min-height: 30px; padding: 0 7px; font-size: 12px; font-weight: 600;
   border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
@@ -531,7 +542,7 @@ button.cel:hover { background: #F6F8F5; }
   .seletor .campo { flex: 1 1 0; min-width: 0; }
   .area { padding-top: 12px; }
 
-  .dia-unico .parte-nome input { min-height: 46px; font-size: 16px; padding: 8px 12px; }
+  .dia-unico .parte-nome select { min-height: 46px; font-size: 16px; padding: 8px 28px 8px 12px; }
   .dia-unico .horas input[type=time] { min-height: 40px; font-size: 15px; }
   .dia-unico .btn-tirar { width: 36px; height: 36px; font-size: 20px; }
   .dia-unico .btn-dividir { min-height: 38px; font-size: 13.5px; padding: 4px 12px; }
@@ -551,7 +562,7 @@ button.cel:hover { background: #F6F8F5; }
   .dia-unico .aus button { width: 32px; height: 32px; font-size: 18px; }
   .dia-unico .aus-rot { font-size: 13px; }
   .dia-unico .aus-add { gap: 6px; }
-  .dia-unico .aus-add input { min-height: 44px; font-size: 16px; }
+  .dia-unico .aus-add select { min-height: 44px; font-size: 16px; }
   .dia-unico .aus-add button { flex: none; min-height: 44px; padding: 0 14px; font-size: 14px; }
   .dia-unico .marco { font-size: 13px; }
 }
@@ -597,14 +608,14 @@ button.cel:hover { background: #F6F8F5; }
     margin: auto 0 0; border-radius: 14px 14px 0 0;
   }
   .dlg-corpo { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
-  .dlg-dia .parte-nome input { min-height: 46px; font-size: 16px; }
+  .dlg-dia .parte-nome select { min-height: 46px; font-size: 16px; }
   .dlg-dia .horas input[type=time] { min-height: 40px; font-size: 15px; }
   .dlg-dia .btn-dividir { min-height: 38px; font-size: 13.5px; }
   .dlg-dia .tipo button { min-height: 38px; font-size: 14px; }
   .dlg-dia .presenca button { min-height: 38px; font-size: 14px; }
-  .dlg-dia .aus-add input, .dlg-dia .aus-add button { min-height: 44px; }
+  .dlg-dia .aus-add select, .dlg-dia .aus-add button { min-height: 44px; }
   .dlg-dia .aus-add button { flex: none; padding: 0 14px; }
-  .dlg-dia .aus-add input { font-size: 16px; }
+  .dlg-dia .aus-add select { font-size: 16px; }
 
   /* Acima do selo do Netlify, para o aviso de "Salvo" não ficar escondido */
   .status { bottom: calc(76px + env(safe-area-inset-bottom)); }

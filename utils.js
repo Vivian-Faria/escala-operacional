@@ -72,6 +72,46 @@ export function normalizaNome(s) {
 export function porNome(a, b) {
   return (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' });
 }
+
+// Distância de edição (Levenshtein) entre duas strings.
+export function distanciaLevenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let anterior = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const atual = [i];
+    for (let j = 1; j <= n; j++) {
+      atual[j] = a[i - 1] === b[j - 1]
+        ? anterior[j - 1]
+        : 1 + Math.min(anterior[j - 1], anterior[j], atual[j - 1]);
+    }
+    anterior = atual;
+  }
+  return anterior[n];
+}
+
+// Acha, entre os `candidatos`, o nome mais parecido com `nome` (distância de
+// edição sobre a forma normalizada — sem acento/maiúsculas), dentro de uma
+// tolerância proporcional ao tamanho do nome. Serve para juntar variações de
+// escrita da mesma pessoa (ex.: "Lucas Luan" e "Lucas Luann") sem juntar
+// pessoas diferentes por engano. Retorna o candidato original (como veio na
+// lista) ou null se nenhum for parecido o suficiente.
+export function nomeParecido(nome, candidatos) {
+  const chave = normalizaNome(nome);
+  if (!chave) return null;
+  let melhor = null;
+  let menorDist = Infinity;
+  for (const c of candidatos) {
+    const chaveC = normalizaNome(c);
+    if (!chaveC) continue;
+    if (chaveC === chave) return c;
+    const dist = distanciaLevenshtein(chave, chaveC);
+    const tolerancia = Math.max(1, Math.round(Math.min(chave.length, chaveC.length) * 0.22));
+    if (dist <= tolerancia && dist < menorDist) { menorDist = dist; melhor = c; }
+  }
+  return melhor;
+}
 export function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

@@ -15,7 +15,7 @@ const $ = (s) => document.querySelector(s);
 const el = {
   selSup: $('#selSupervisor'), selHub: $('#selHub'), aviso: $('#aviso'), painel: $('#painel'),
   quadro: $('#quadro'), titulo: $('#tituloPeriodo'), resumo: $('#resumoPeriodo'),
-  lista: $('#listaColaboradores'), dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
+  dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
   lembrete: $('#lembrete')
 };
 const mostrarStatus = criarStatus($('#status'));
@@ -255,13 +255,32 @@ function renderSeletores() {
   atualizarUrl();
 }
 
-// Sugestões ao digitar: colaboradores do hub + os sem hub definido
-function atualizarDatalist() {
+// Nomes selecionáveis: só colaboradores já cadastrados (do hub + os sem hub
+// definido), para o supervisor não digitar nomes soltos e gerar variações.
+function colaboradoresDoHub() {
   const todos = estado.cfg.colaboradores;
   let lista = todos.filter((c) => !c.hubId || c.hubId === estado.hubId);
   if (!lista.length) lista = todos;
-  el.lista.innerHTML = [...lista].sort(porNome)
-    .map((c) => `<option value="${escapeHtml(c.nome)}"></option>`).join('');
+  return [...lista].sort(porNome);
+}
+
+// Monta as <option> de um <select> de nome: placeholder + cadastrados do hub.
+// Se o valor atual não estiver mais nos cadastros (nome digitado antes desta
+// restrição, ou de outro hub), mantém ele como opção extra — para não apagar
+// silenciosamente quem já estava lançado.
+function opcoesColaboradores(valorAtual, placeholder) {
+  const lista = colaboradoresDoHub();
+  const existe = lista.some((c) => c.nome === valorAtual);
+  const extra = valorAtual && !existe
+    ? `<option value="${escapeHtml(valorAtual)}" selected>${escapeHtml(valorAtual)} (não cadastrado)</option>`
+    : '';
+  return `<option value="">${escapeHtml(placeholder)}</option>${extra}`
+    + lista.map((c) => `<option value="${escapeHtml(c.nome)}"${c.nome === valorAtual ? ' selected' : ''}>${escapeHtml(c.nome)}</option>`).join('');
+}
+
+function atualizarDatalist() {
+  // Mantido por compatibilidade com chamadas existentes (troca de hub, etc.);
+  // os <select> são remontados no próximo render(), que já lê os cadastros atuais.
 }
 
 function atualizarUrl() {
@@ -358,9 +377,9 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
     </div>` : '';
   return `<div class="parte${p.faltou ? ' faltou' : ''}">
     <div class="parte-nome">
-      <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
-        value="${escapeHtml(p.nome)}" placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}"
-        aria-label="${escapeHtml(rotulo)}" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+      <select class="${p.nome ? '' : 'vazio'}" aria-label="${escapeHtml(rotulo)}" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+        ${opcoesColaboradores(p.nome, mostrarHoras ? 'Quem cobre' : 'Descoberta')}
+      </select>
       ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
     </div>
@@ -393,9 +412,10 @@ function htmlVagaDispensada(iso, t, i, v, travado, rotDia) {
   const chave = `${iso}|${t.id}|${i}|0`;
   return `<div class="vaga dispensada">
     <p class="vaga-dispensa">Folga de ${escapeHtml(v.dispensada)} — vaga sobressalente, não conta como furo</p>
-    <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="next"
-      placeholder="Reforço opcional" aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
+    <select aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
       data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+      ${opcoesColaboradores('', 'Reforço opcional')}
+    </select>
   </div>`;
 }
 
@@ -420,9 +440,10 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
     ${total ? `<ul class="aus-lista">${faltas.map((n) => chip(n, 'faltas')).join('')}${folgas.map((n) => chip(n, 'folgas')).join('')}</ul>` : ''}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
     <div class="aus-add">
-      <input type="text" list="listaColaboradores" autocomplete="off" spellcheck="false" enterkeyhint="done"
-        placeholder="Nome" aria-label="Nome para lançar folga ou falta em ${escapeHtml(t.nome)}, ${rotDia}"
+      <select aria-label="Nome para lançar folga ou falta em ${escapeHtml(t.nome)}, ${rotDia}"
         data-aus="${iso}|${t.id}" data-foco="a|${iso}|${t.id}" ${dis}>
+        ${opcoesColaboradores('', 'Nome')}
+      </select>
       <button type="button" data-lancar="folgas" ${dis}>Folga</button>
       <button type="button" data-lancar="faltas" ${dis}>Falta</button>
     </div>
@@ -852,7 +873,7 @@ el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(
 
 document.addEventListener('change', (e) => {
   const i = e.target;
-  if (i.matches?.('input[data-parte]')) salvarNome(i);
+  if (i.matches?.('[data-parte]')) salvarNome(i);
   else if (i.matches?.('input[data-hora]')) salvarHora(i);
 });
 
@@ -860,13 +881,13 @@ document.addEventListener('change', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const i = e.target;
-  if (i.matches?.('input[data-parte]')) {
+  if (i.matches?.('[data-parte]')) {
     e.preventDefault();
-    const campos = [...document.querySelectorAll('input[data-parte]:not([disabled])')]
+    const campos = [...document.querySelectorAll('[data-parte]:not([disabled])')]
       .filter((x) => x.offsetParent !== null);
     const prox = campos[campos.indexOf(i) + 1];
     if (prox) prox.focus(); else i.blur();
-  } else if (i.matches?.('input[data-aus]')) {
+  } else if (i.matches?.('[data-aus]')) {
     e.preventDefault();
     i.blur();
   }
@@ -903,7 +924,7 @@ document.addEventListener('click', (e) => {
         valor === 'sim' ? `${ds.nome} marcado como presente` : `${ds.nome} marcado como ausente`);
     }
   } else if (ds.lancar) {
-    lancar(b.closest('.aus-add').querySelector('input'), ds.lancar);
+    lancar(b.closest('.aus-add').querySelector('[data-aus]'), ds.lancar);
   } else if (ds.removerAus) {
     const [campo, iso, turnoId] = ds.removerAus.split('|');
     gravar(() => removerAusencia(estado.hubId, iso, turnoId, ds.nome, campo, nomeSupervisor()),
