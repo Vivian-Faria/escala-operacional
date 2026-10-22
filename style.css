@@ -661,14 +661,15 @@ button.cel:hover { background: #F6F8F5; }
 .lista { list-style: none; margin: 0; padding: 0; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-m); }
 .item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--linha); }
 .item:last-child { border-bottom: 0; }
-.item > input[type=text] { flex: 1 1 auto; max-width: 360px; }
-.item > select { flex: 0 1 200px; }
+.item > input[type=text] { flex: 1 1 auto; min-width: 0; max-width: 360px; }
+.item > select { flex: 0 1 200px; min-width: 0; }
 .item > .btn-texto { margin-left: auto; }
 .item-meta { color: var(--grafite); font-size: 13px; }
 .item-data { font-weight: 650; min-width: 110px; font-size: 14px; }
 .item-empilhado { flex-direction: column; align-items: stretch; gap: 8px; }
-.item-linha { display: flex; align-items: center; gap: 12px; }
-.item-linha input { flex: 1; max-width: 360px; }
+.item-linha { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.item-linha input[type=text] { flex: 1 1 160px; min-width: 0; max-width: 360px; }
+.item-linha select { flex: 0 1 200px; min-width: 0; }
 .item-linha .btn-texto { margin-left: auto; }
 
 .lista-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
@@ -722,7 +723,10 @@ button.cel:hover { background: #F6F8F5; }
 .chip-fixo { flex: none; padding: 5px 12px; font-size: 13px; min-height: 34px; }
 .chip-fixo[aria-pressed="true"] { background: var(--comemorativa); border-color: var(--comemorativa); }
 
-/* ---------- Colaboradores: padrão fixo e geração de escala-base ---------- */
+/* ---------- Colaboradores: outras grafias, padrão fixo e geração de escala-base ---------- */
+.campo-apelidos { gap: 2px; }
+.campo-apelidos > span { font-size: 11.5px; }
+.campo-apelidos input { min-height: 30px; padding: 3px 8px; font-size: 12.5px; color: var(--grafite); }
 .fixo-painel {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px;
   padding: 10px 12px; border-radius: var(--raio-p); background: var(--papel);

@@ -334,7 +334,7 @@ function renderSupervisores() {
 function renderColaboradores() {
   const opcoesHub = hubsOrdenados().map((h) => `<option value="${h.id}">${escapeHtml(h.nome)}</option>`).join('');
   el.conteudo.innerHTML = `
-    ${cabecalho('Colaboradores', 'Os nomes aparecem como sugestão quando o supervisor digita na escala. Ele também pode escrever um nome que não está aqui, como um freelancer novo. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
+    ${cabecalho('Colaboradores', 'Só quem está cadastrado aqui aparece para o supervisor escolher na escala — cadastre a pessoa antes de escalá-la, inclusive um freelancer novo. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
     <form class="add-colabs" data-form="colab">
       <label class="campo campo-largo">
         <span>Nomes, um por linha</span>
@@ -482,6 +482,11 @@ function renderListaColabs() {
         aria-pressed="${Boolean(c.fixo)}" title="Tem padrão fixo: dias da semana + 1 turno">Fixo</button>
       <button type="button" class="btn-texto perigo" data-acao="remover-colab" data-id="${c.id}">Remover</button>
     </div>
+    <label class="campo campo-apelidos">
+      <span>Outras grafias já usadas (opcional, separadas por vírgula)</span>
+      <input type="text" placeholder="ex.: Jiule, Julie Helena" data-tipo="colab" data-id="${c.id}" data-campo="apelidos"
+        value="${escapeHtml((c.apelidos || []).join(', '))}">
+    </label>
     ${painelFixo(c)}
   </li>`).join('') : '<li class="item-meta">Ninguém encontrado com esse nome.</li>';
 }
@@ -701,15 +706,26 @@ function apurarIndicadores() {
   const { ini, fim } = faixaIndicadores();
   const hubs = indicadoresEstado.hubId ? hubsOrdenados().filter((h) => h.id === indicadoresEstado.hubId) : hubsOrdenados();
   const porPessoa = new Map();
-  // Nomes cadastrados são a referência: uma grafia parecida com uma delas
-  // junta-se a essa pessoa, usando o nome do cadastro para exibir. Quem não
-  // bate com nenhum cadastro ainda junta com uma grafia parecida já vista
-  // nesta mesma apuração (ex.: lançamentos antigos, de alguém removido).
+  // Três formas de reconhecer a mesma pessoa, da mais certa para a mais
+  // arriscada: 1) grafia cadastrada em "outras grafias" do colaborador (match
+  // exato, sem chance de juntar gente diferente); 2) nome parecido com um
+  // nome cadastrado; 3) nome parecido com outra grafia já vista nesta mesma
+  // apuração (para quem nem está mais cadastrado). As duas últimas usam
+  // distância de edição com tolerância curta, pra não juntar pessoas
+  // diferentes com nomes parecidos (ex.: "Maria Silva" e "Maria Souza").
   const nomesCadastro = (cfg.colaboradores || []).map((c) => c.nome);
+  const porApelido = new Map();
+  for (const c of cfg.colaboradores || []) {
+    for (const apelido of c.apelidos || []) {
+      const chaveApelido = normalizaNome(apelido);
+      if (chaveApelido) porApelido.set(chaveApelido, normalizaNome(c.nome));
+    }
+  }
   const nomesVistos = [];
   const chaveCanonica = (nomeBruto) => {
     const direta = normalizaNome(nomeBruto);
     if (porPessoa.has(direta)) return direta;
+    if (porApelido.has(direta)) return porApelido.get(direta);
     const doCadastro = nomeParecido(nomeBruto, nomesCadastro);
     if (doCadastro) return normalizaNome(doCadastro);
     const parecido = nomeParecido(nomeBruto, nomesVistos);
@@ -851,7 +867,9 @@ el.conteudo.addEventListener('input', (e) => {
     const c = cfg.colaboradores.find((x) => x.id === id);
     if (campo === 'hub') c.hubId = i.value;
     else if (campo === 'turnoFixo') c.turnoFixoId = i.value;
-    else c.nome = i.value;
+    else if (campo === 'apelidos') {
+      c.apelidos = i.value.split(',').map(limparNome).filter(Boolean);
+    } else c.nome = i.value;
   } else if (tipo === 'data') {
     cfg.datasEspeciais.find((x) => x.id === id)[campo] = i.value;
   } else if (tipo === 'turno') {
