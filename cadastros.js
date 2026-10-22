@@ -1,5 +1,5 @@
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
-import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas } from './db.js';
+import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote } from './db.js';
 import { entrar, sair, aoMudarLogin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
@@ -22,9 +22,18 @@ let aba = 'hubs';
 let hubTurnos = '';
 let filtroColab = '';
 
+// ---------- estado da geração da escala-base (colaboradores fixos) ----------
+const geracaoEstado = { hubId: '', inicio: '', fim: '', gerando: false };
+
 // ---------- estado da aba "Buracos na escala" (vale para todos os hubs) ----------
 const buracosEstado = {
   hubId: '', modo: 'semana', ref: new Date(),
+  escalas: {}, prontas: false, cancelar: null, chaveFaixa: ''
+};
+
+// ---------- estado da aba "Indicadores de confiabilidade" ----------
+const indicadoresEstado = {
+  hubId: '', modo: 'mes', ref: new Date(), filtro: '',
   escalas: {}, prontas: false, cancelar: null, chaveFaixa: ''
 };
 
@@ -222,7 +231,8 @@ function renderAba() {
     b.setAttribute('aria-selected', String(b.dataset.aba === aba));
   });
   ({ hubs: renderHubs, turnos: renderTurnos, supervisores: renderSupervisores,
-    colaboradores: renderColaboradores, datas: renderDatas, buracos: renderBuracos })[aba]();
+    colaboradores: renderColaboradores, datas: renderDatas, buracos: renderBuracos,
+    indicadores: renderIndicadores })[aba]();
 }
 
 // ---------- Hubs ----------
@@ -324,7 +334,7 @@ function renderSupervisores() {
 function renderColaboradores() {
   const opcoesHub = hubsOrdenados().map((h) => `<option value="${h.id}">${escapeHtml(h.nome)}</option>`).join('');
   el.conteudo.innerHTML = `
-    ${cabecalho('Colaboradores', 'Os nomes aparecem como sugestão quando o supervisor digita na escala. Ele também pode escrever um nome que não está aqui, como um freelancer novo. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala.')}
+    ${cabecalho('Colaboradores', 'Os nomes aparecem como sugestão quando o supervisor digita na escala. Ele também pode escrever um nome que não está aqui, como um freelancer novo. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
     <form class="add-colabs" data-form="colab">
       <label class="campo campo-largo">
         <span>Nomes, um por linha</span>
@@ -341,8 +351,116 @@ function renderColaboradores() {
       <label class="sr" for="buscaColab">Buscar colaborador</label>
       <input type="search" id="buscaColab" placeholder="Buscar" value="${escapeHtml(filtroColab)}">
     </div>
-    <ul class="lista" id="listaColabs"></ul>`;
+    <ul class="lista" id="listaColabs"></ul>
+    ${htmlGeracaoBase()}`;
   renderListaColabs();
+}
+
+function painelFixo(c) {
+  if (!c.fixo) return '';
+  if (!c.hubId) return '<div class="fixo-painel"><p class="item-meta">Defina o hub acima para configurar o padrão fixo.</p></div>';
+  const turnos = ordenaTurnos(cfg.turnos.filter((t) => t.hubId === c.hubId));
+  if (!turnos.length) return '<div class="fixo-painel"><p class="item-meta">Esse hub ainda não tem turnos cadastrados.</p></div>';
+  const dias = c.diasFixos || [false, true, true, true, true, true, false];
+  return `<div class="fixo-painel">
+    <label class="campo campo-inline">
+      <span>Turno fixo</span>
+      <select aria-label="Turno fixo de ${escapeHtml(c.nome)}" data-tipo="colab" data-id="${c.id}" data-campo="turnoFixo">
+        <option value="">Escolha o turno</option>
+        ${turnos.map((t) => `<option value="${t.id}"${t.id === c.turnoFixoId ? ' selected' : ''}>${escapeHtml(t.nome)} (${t.inicio}–${t.fim})</option>`).join('')}
+      </select>
+    </label>
+    <div class="chips chips-dias" role="group" aria-label="Dias fixos de ${escapeHtml(c.nome)}">
+      ${DIAS_CURTO.map((d, i) => `<button type="button" class="chip" data-acao="colab-dia" data-id="${c.id}" data-dia="${i}"
+        aria-pressed="${Boolean(dias[i])}">${d}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function garantirDatasGeracao() {
+  if (!geracaoEstado.inicio) geracaoEstado.inicio = isoDate(new Date());
+  if (!geracaoEstado.fim) geracaoEstado.fim = isoDate(addDays(new Date(), 6));
+}
+
+function htmlGeracaoBase() {
+  garantirDatasGeracao();
+  const hubs = hubsOrdenados();
+  const fixos = cfg.colaboradores.filter((c) => c.fixo && c.turnoFixoId && c.hubId && (c.diasFixos || []).some(Boolean));
+  return `<div class="geracao-base">
+    <h3>Gerar escala-base</h3>
+    <p class="item-meta">Preenche automaticamente as vagas ainda vazias dos colaboradores fixos, no período escolhido. Não mexe em vagas já preenchidas manualmente, nem duplica quem já está escalado naquele turno e dia.</p>
+    ${fixos.length ? '' : '<p class="vazio">Nenhum colaborador fixo configurado ainda — marque "Fixo" em algum colaborador acima.</p>'}
+    <div class="geracao-linha">
+      <label class="campo"><span>Hub</span>
+        <select data-geracao="hub" ${fixos.length ? '' : 'disabled'}>
+          <option value="">Todos os hubs</option>
+          ${hubs.map((h) => `<option value="${h.id}"${h.id === geracaoEstado.hubId ? ' selected' : ''}>${escapeHtml(h.nome)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="campo"><span>De</span><input type="date" data-geracao="inicio" value="${geracaoEstado.inicio}" ${fixos.length ? '' : 'disabled'}></label>
+      <label class="campo"><span>Até</span><input type="date" data-geracao="fim" value="${geracaoEstado.fim}" ${fixos.length ? '' : 'disabled'}></label>
+      <button type="button" class="btn-secundario" data-acao="gerar-base" ${fixos.length && !geracaoEstado.gerando ? '' : 'disabled'}>${geracaoEstado.gerando ? 'Gerando…' : 'Gerar'}</button>
+    </div>
+  </div>`;
+}
+
+async function gerarEscalaBase() {
+  const fixos = cfg.colaboradores.filter((c) => c.fixo && c.turnoFixoId && c.hubId && (c.diasFixos || []).some(Boolean)
+    && (!geracaoEstado.hubId || c.hubId === geracaoEstado.hubId));
+  if (!fixos.length) { mostrarStatus('Nenhum colaborador fixo para esse hub.', 'neutro'); return; }
+  const ini = parseIso(geracaoEstado.inicio);
+  const fim = parseIso(geracaoEstado.fim);
+  if (ini > fim) { mostrarStatus('A data final precisa ser igual ou depois da inicial.', 'erro'); return; }
+
+  geracaoEstado.gerando = true;
+  renderAba();
+  mostrarStatus('Gerando escala-base…', 'neutro', true);
+  try {
+    const escalas = await lerEscalas(isoDate(ini), isoDate(fim));
+    const escritas = [];
+    const reservadasNesteLote = new Set();
+
+    for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+      const iso = isoDate(d);
+      const dow = d.getDay();
+      for (const c of fixos) {
+        if (!c.diasFixos[dow]) continue;
+        const turno = cfg.turnos.find((t) => t.id === c.turnoFixoId && t.hubId === c.hubId);
+        if (!turno) continue;
+        const n = Number(turno.vagas?.[dow]) || 0;
+        if (!n) continue;
+        const doc = escalas[`${c.hubId}_${iso}`];
+        const salvas = vagasDe(doc?.slots?.[turno.id]);
+        const jaEscalado = salvas.some((partes) => partes.some((p) => normalizaNome(p.nome) === normalizaNome(c.nome)));
+        if (jaEscalado) continue;
+        let indiceLivre = -1;
+        for (let i = 0; i < n; i++) {
+          const chave = `${c.hubId}_${iso}_${turno.id}_${i}`;
+          const ocupada = (salvas[i] || []).length > 0 || reservadasNesteLote.has(chave);
+          if (!ocupada) { indiceLivre = i; reservadasNesteLote.add(chave); break; }
+        }
+        if (indiceLivre === -1) continue;
+        escritas.push({
+          hubId: c.hubId, dataIso: iso, turnoId: turno.id, indice: indiceLivre,
+          dados: { partes: [{ nome: c.nome, tipo: 'fixo', inicio: '', fim: '' }] },
+          supervisor: 'Geração automática (escala-base)'
+        });
+      }
+    }
+
+    if (!escritas.length) {
+      mostrarStatus('Nada para gerar: já está tudo preenchido, ou não há vagas suficientes no período.', 'neutro');
+    } else {
+      await salvarVagasEmLote(escritas);
+      mostrarStatus(`${plural(escritas.length, 'vaga preenchida', 'vagas preenchidas')} automaticamente.`);
+    }
+  } catch (err) {
+    console.error(err);
+    mostrarStatus('Não foi possível gerar a escala-base. Verifique a conexão e tente de novo.', 'erro', true);
+  } finally {
+    geracaoEstado.gerando = false;
+    renderAba();
+  }
 }
 
 function renderListaColabs() {
@@ -351,15 +469,20 @@ function renderListaColabs() {
   const busca = normalizaNome(filtroColab);
   const lista = [...cfg.colaboradores].sort(porNome).filter((c) => !busca || normalizaNome(c.nome).includes(busca));
   if (!cfg.colaboradores.length) { alvo.outerHTML = '<p class="vazio" id="listaColabs">Nenhum colaborador cadastrado.</p>'; return; }
-  alvo.innerHTML = lista.length ? lista.map((c) => `<li class="item">
-    <input type="text" aria-label="Nome do colaborador" data-tipo="colab" data-id="${c.id}" data-campo="nome" value="${escapeHtml(c.nome)}">
-    <select aria-label="Hub de ${escapeHtml(c.nome)}" data-tipo="colab" data-id="${c.id}" data-campo="hub">
-      <option value="">Qualquer hub</option>
-      ${hubsOrdenados().map((h) => `<option value="${h.id}"${h.id === c.hubId ? ' selected' : ''}>${escapeHtml(h.nome)}</option>`).join('')}
-    </select>
-    <button type="button" class="chip chip-supervisor" data-acao="supervisor-colab" data-id="${c.id}"
-      aria-pressed="${c.papel === 'supervisor'}" title="Supervisor sobressalente: folga não conta como furo">Supervisor</button>
-    <button type="button" class="btn-texto perigo" data-acao="remover-colab" data-id="${c.id}">Remover</button>
+  alvo.innerHTML = lista.length ? lista.map((c) => `<li class="item item-empilhado">
+    <div class="item-linha">
+      <input type="text" aria-label="Nome do colaborador" data-tipo="colab" data-id="${c.id}" data-campo="nome" value="${escapeHtml(c.nome)}">
+      <select aria-label="Hub de ${escapeHtml(c.nome)}" data-tipo="colab" data-id="${c.id}" data-campo="hub">
+        <option value="">Qualquer hub</option>
+        ${hubsOrdenados().map((h) => `<option value="${h.id}"${h.id === c.hubId ? ' selected' : ''}>${escapeHtml(h.nome)}</option>`).join('')}
+      </select>
+      <button type="button" class="chip chip-supervisor" data-acao="supervisor-colab" data-id="${c.id}"
+        aria-pressed="${c.papel === 'supervisor'}" title="Supervisor sobressalente: folga não conta como furo">Supervisor</button>
+      <button type="button" class="chip chip-fixo" data-acao="fixo-colab" data-id="${c.id}"
+        aria-pressed="${Boolean(c.fixo)}" title="Tem padrão fixo: dias da semana + 1 turno">Fixo</button>
+      <button type="button" class="btn-texto perigo" data-acao="remover-colab" data-id="${c.id}">Remover</button>
+    </div>
+    ${painelFixo(c)}
   </li>`).join('') : '<li class="item-meta">Ninguém encontrado com esse nome.</li>';
 }
 
@@ -533,10 +656,172 @@ function renderBuracos() {
     <div id="buracosLista">${htmlListaBuracos()}</div>`;
 }
 
+// ---------- Indicadores de confiabilidade ----------
+const CLASSES_INDICADOR = ['Confiável', 'Em observação', 'Não confiável', 'Sem dados suficientes'];
+
+function faixaIndicadores() {
+  if (indicadoresEstado.modo === 'semana') {
+    const ini = startOfWeek(indicadoresEstado.ref);
+    return { ini, fim: addDays(ini, 6) };
+  }
+  const primeiro = new Date(indicadoresEstado.ref.getFullYear(), indicadoresEstado.ref.getMonth(), 1);
+  const ultimo = new Date(indicadoresEstado.ref.getFullYear(), indicadoresEstado.ref.getMonth() + 1, 0);
+  return { ini: primeiro, fim: ultimo, primeiro };
+}
+
+function tituloPeriodoIndicadores() {
+  const { ini, fim, primeiro } = faixaIndicadores();
+  if (indicadoresEstado.modo === 'mes') return `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
+  const a = ini.getDate(), b = fim.getDate();
+  return ini.getMonth() === fim.getMonth()
+    ? `${a} a ${b} de ${MESES[fim.getMonth()]}`
+    : `${a} de ${MESES[ini.getMonth()]} a ${b} de ${MESES[fim.getMonth()]}`;
+}
+
+function assinarIndicadores() {
+  const { ini, fim } = faixaIndicadores();
+  const chave = `${isoDate(ini)}|${isoDate(fim)}`;
+  if (chave === indicadoresEstado.chaveFaixa) return;
+  indicadoresEstado.chaveFaixa = chave;
+  indicadoresEstado.cancelar?.();
+  indicadoresEstado.escalas = {};
+  indicadoresEstado.prontas = false;
+  indicadoresEstado.cancelar = ouvirEscalas(isoDate(ini), isoDate(fim), (m) => {
+    indicadoresEstado.escalas = m;
+    indicadoresEstado.prontas = true;
+    renderIndicadores();
+  }, () => mostrarStatus('Não foi possível carregar a escala do período.', 'erro', true));
+}
+
+// Para cada pessoa que apareceu escalada no período (em qualquer hub, ou só
+// no filtrado), calcula: quantas vezes foi escalada, % de confirmação de
+// horário e % de comparecimento (excluindo quem ainda está pendente de
+// marcação), e a classificação conforme os limites configuráveis.
+function apurarIndicadores() {
+  const { ini, fim } = faixaIndicadores();
+  const hubs = indicadoresEstado.hubId ? hubsOrdenados().filter((h) => h.id === indicadoresEstado.hubId) : hubsOrdenados();
+  const porPessoa = new Map();
+  const pessoa = (nome) => {
+    const chave = normalizaNome(nome);
+    if (!porPessoa.has(chave)) porPessoa.set(chave, { nome, hubs: new Set(), escalado: 0, confirmados: 0, sim: 0, nao: 0 });
+    return porPessoa.get(chave);
+  };
+
+  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+    const iso = isoDate(d);
+    const dow = d.getDay();
+    for (const hub of hubs) {
+      for (const t of cfg.turnos.filter((x) => x.hubId === hub.id)) {
+        const n = Number(t.vagas?.[dow]) || 0;
+        if (!n) continue;
+        const doc = indicadoresEstado.escalas[`${hub.id}_${iso}`];
+        const salvas = vagasDe(doc?.slots?.[t.id]);
+        const confirmSet = new Set((doc?.confirmacoes?.[t.id] || []).map(normalizaNome));
+        const simSet = new Set((doc?.compareceram?.[t.id] || []).map(normalizaNome));
+        const naoSet = new Set((doc?.faltas?.[t.id] || []).map(normalizaNome));
+        for (let i = 0; i < n; i++) {
+          for (const p of (salvas[i] || [])) {
+            if (!p.nome) continue;
+            const pe = pessoa(p.nome);
+            pe.hubs.add(hub.nome);
+            pe.escalado++;
+            const chaveNome = normalizaNome(p.nome);
+            if (confirmSet.has(chaveNome)) pe.confirmados++;
+            if (naoSet.has(chaveNome)) pe.nao++;
+            else if (simSet.has(chaveNome)) pe.sim++;
+          }
+        }
+      }
+    }
+  }
+
+  const limites = cfg.limitesConfiabilidade || { confiavel: 90, naoConfiavel: 70 };
+  return [...porPessoa.values()].map((pe) => {
+    const pctConfirmacao = pe.escalado ? Math.round((pe.confirmados / pe.escalado) * 100) : null;
+    const marcadas = pe.sim + pe.nao;
+    const pctComparecimento = marcadas ? Math.round((pe.sim / marcadas) * 100) : null;
+    let classe = 'Sem dados suficientes';
+    if (pctConfirmacao !== null && pctComparecimento !== null) {
+      if (pctConfirmacao < limites.naoConfiavel || pctComparecimento < limites.naoConfiavel) classe = 'Não confiável';
+      else if (pctConfirmacao >= limites.confiavel && pctComparecimento >= limites.confiavel) classe = 'Confiável';
+      else classe = 'Em observação';
+    }
+    return { nome: pe.nome, hubs: [...pe.hubs].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      escalado: pe.escalado, pctConfirmacao, pctComparecimento, classe };
+  }).sort(porNome);
+}
+
+function classeCss(classe) {
+  return { 'Confiável': 'confiavel', 'Em observação': 'observacao', 'Não confiável': 'nao-confiavel', 'Sem dados suficientes': 'sem-dados' }[classe];
+}
+
+function htmlTabelaIndicadores() {
+  if (!indicadoresEstado.prontas) return '<p class="carregando">Carregando…</p>';
+  let pessoas = apurarIndicadores();
+  if (indicadoresEstado.filtro) pessoas = pessoas.filter((p) => p.classe === indicadoresEstado.filtro);
+  if (!pessoas.length) return '<p class="vazio">Ninguém escalado nesse período (ou nesse filtro).</p>';
+  const linhas = pessoas.map((p) => `<tr>
+    <td>${escapeHtml(p.nome)}</td>
+    <td class="item-meta">${p.hubs.map(escapeHtml).join(', ')}</td>
+    <td>${p.escalado}</td>
+    <td>${p.pctConfirmacao === null ? '—' : `${p.pctConfirmacao}%`}</td>
+    <td>${p.pctComparecimento === null ? '—' : `${p.pctComparecimento}%`}</td>
+    <td><span class="selo-indicador ${classeCss(p.classe)}">${p.classe}</span></td>
+  </tr>`).join('');
+  return `<div class="tabela-rolagem"><table class="tabela-indicadores">
+    <thead><tr><th>Nome</th><th>Hub(s)</th><th>Vezes escalado</th><th>% confirmação</th><th>% comparecimento</th><th>Classificação</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table></div>`;
+}
+
+function renderIndicadores() {
+  const hubs = hubsOrdenados();
+  if (!hubs.length) {
+    el.conteudo.innerHTML = `${cabecalho('Indicadores de confiabilidade', 'Mede, por colaborador, quanto ele confirma o horário combinado e comparece de fato.')}<p class="vazio">Cadastre um hub primeiro, na aba Hubs.</p>`;
+    return;
+  }
+  assinarIndicadores();
+  const limites = cfg.limitesConfiabilidade || { confiavel: 90, naoConfiavel: 70 };
+  el.conteudo.innerHTML = `
+    ${cabecalho('Indicadores de confiabilidade', '% de confirmação = confirmações / vezes escalado. % de comparecimento = compareceu / (compareceu + não compareceu), sem contar quem ainda está pendente de marcação. Os dois vêm das marcações feitas direto na grade da escala.')}
+    <div class="limites-indicador">
+      <label class="campo campo-inline"><span>Confiável a partir de (%)</span>
+        <input type="number" min="0" max="100" data-tipo="limites" data-campo="confiavel" value="${limites.confiavel}"></label>
+      <label class="campo campo-inline"><span>Não confiável abaixo de (%)</span>
+        <input type="number" min="0" max="100" data-tipo="limites" data-campo="naoConfiavel" value="${limites.naoConfiavel}"></label>
+    </div>
+    <div class="chips chips-hub" role="group" aria-label="Hub">
+      <button type="button" class="chip" data-acao="indic-hub" data-id="" aria-pressed="${!indicadoresEstado.hubId}">Todos os hubs</button>
+      ${hubs.map((h) => `<button type="button" class="chip" data-acao="indic-hub" data-id="${h.id}" aria-pressed="${h.id === indicadoresEstado.hubId}">${escapeHtml(h.nome)}</button>`).join('')}
+    </div>
+    <div class="chips chips-classe" role="group" aria-label="Classificação">
+      <button type="button" class="chip" data-acao="indic-filtro" data-valor="" aria-pressed="${!indicadoresEstado.filtro}">Todas</button>
+      ${CLASSES_INDICADOR.map((c) => `<button type="button" class="chip" data-acao="indic-filtro" data-valor="${c}" aria-pressed="${indicadoresEstado.filtro === c}">${c}</button>`).join('')}
+    </div>
+    <div class="barra-periodo">
+      <div class="nav-periodo">
+        <button type="button" class="btn-icone" data-acao="indic-anterior" aria-label="Período anterior">‹</button>
+        <button type="button" class="btn-icone" data-acao="indic-proximo" aria-label="Próximo período">›</button>
+        <h3>${tituloPeriodoIndicadores()}</h3>
+      </div>
+      <div class="alternador" role="group" aria-label="Visualização">
+        <button type="button" data-acao="indic-modo" data-valor="semana" aria-pressed="${indicadoresEstado.modo === 'semana'}">Semana</button>
+        <button type="button" data-acao="indic-modo" data-valor="mes" aria-pressed="${indicadoresEstado.modo === 'mes'}">Mês</button>
+      </div>
+    </div>
+    <div id="indicadoresLista">${htmlTabelaIndicadores()}</div>`;
+}
+
 // ================= eventos do conteúdo =================
 el.conteudo.addEventListener('input', (e) => {
   const i = e.target;
   if (i.id === 'buscaColab') { filtroColab = i.value; renderListaColabs(); return; }
+  if (i.dataset.geracao) {
+    if (i.dataset.geracao === 'hub') geracaoEstado.hubId = i.value;
+    else if (i.dataset.geracao === 'inicio') geracaoEstado.inicio = i.value;
+    else if (i.dataset.geracao === 'fim') geracaoEstado.fim = i.value;
+    return;
+  }
   const { tipo, id, campo } = i.dataset;
   if (!tipo) return;
 
@@ -544,7 +829,9 @@ el.conteudo.addEventListener('input', (e) => {
   else if (tipo === 'sup') cfg.supervisores.find((x) => x.id === id).nome = i.value;
   else if (tipo === 'colab') {
     const c = cfg.colaboradores.find((x) => x.id === id);
-    if (campo === 'hub') c.hubId = i.value; else c.nome = i.value;
+    if (campo === 'hub') c.hubId = i.value;
+    else if (campo === 'turnoFixo') c.turnoFixoId = i.value;
+    else c.nome = i.value;
   } else if (tipo === 'data') {
     cfg.datasEspeciais.find((x) => x.id === id)[campo] = i.value;
   } else if (tipo === 'turno') {
@@ -562,6 +849,9 @@ el.conteudo.addEventListener('input', (e) => {
       t[campo] = i.value;
       if (campo === 'inicio') i.closest('tr').className = `faixa-${faixaDoDia(i.value)}`;
     }
+  } else if (tipo === 'limites') {
+    cfg.limitesConfiabilidade = cfg.limitesConfiabilidade || { confiavel: 90, naoConfiavel: 70 };
+    cfg.limitesConfiabilidade[campo] = Math.max(0, Math.min(100, parseInt(i.value, 10) || 0));
   }
   marcar();
 });
@@ -681,6 +971,46 @@ el.conteudo.addEventListener('click', (e) => {
     case 'remover-colab':
       cfg.colaboradores = cfg.colaboradores.filter((x) => x.id !== id);
       break;
+    case 'fixo-colab': {
+      const c = cfg.colaboradores.find((x) => x.id === id);
+      c.fixo = !c.fixo;
+      if (c.fixo && !c.diasFixos) c.diasFixos = [false, true, true, true, true, true, false];
+      break;
+    }
+    case 'colab-dia': {
+      const c = cfg.colaboradores.find((x) => x.id === id);
+      const dia = Number(b.dataset.dia);
+      c.diasFixos = c.diasFixos || [false, true, true, true, true, true, false];
+      c.diasFixos[dia] = !c.diasFixos[dia];
+      b.setAttribute('aria-pressed', String(c.diasFixos[dia]));
+      marcar();
+      return; // sem redesenhar, para manter o foco no botão
+    }
+    case 'gerar-base':
+      gerarEscalaBase();
+      return;
+    case 'indic-hub':
+      indicadoresEstado.hubId = id;
+      renderIndicadores();
+      return;
+    case 'indic-filtro':
+      indicadoresEstado.filtro = b.dataset.valor;
+      renderIndicadores();
+      return;
+    case 'indic-modo':
+      indicadoresEstado.modo = b.dataset.valor;
+      indicadoresEstado.chaveFaixa = '';
+      renderIndicadores();
+      return;
+    case 'indic-anterior':
+    case 'indic-proximo': {
+      const passo = acao === 'indic-proximo' ? 1 : -1;
+      indicadoresEstado.ref = indicadoresEstado.modo === 'semana' ? addDays(indicadoresEstado.ref, passo * 7)
+        : new Date(indicadoresEstado.ref.getFullYear(), indicadoresEstado.ref.getMonth() + passo, 1);
+      indicadoresEstado.chaveFaixa = '';
+      renderIndicadores();
+      return;
+    }
     case 'remover-data':
       cfg.datasEspeciais = cfg.datasEspeciais.filter((x) => x.id !== id);
       break;

@@ -3,8 +3,8 @@
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, serverTimestamp,
-  arrayUnion, arrayRemove
+  getFirestore, doc, getDoc, getDocs, setDoc, onSnapshot, collection, query, where, serverTimestamp,
+  arrayUnion, arrayRemove, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -32,7 +32,8 @@ function montarConfig(snap) {
     turnos: d.turnos || [],
     supervisores: d.supervisores || [],
     colaboradores: d.colaboradores || [],
-    datasEspeciais: d.datasEspeciais || []
+    datasEspeciais: d.datasEspeciais || [],
+    limitesConfiabilidade: d.limitesConfiabilidade || { confiavel: 90, naoConfiavel: 70 }
   };
 }
 
@@ -51,6 +52,7 @@ export async function salvarConfig(cfg) {
     supervisores: cfg.supervisores,
     colaboradores: cfg.colaboradores,
     datasEspeciais: cfg.datasEspeciais,
+    limitesConfiabilidade: cfg.limitesConfiabilidade,
     atualizadoEm: serverTimestamp()
   });
 }
@@ -105,4 +107,75 @@ export async function removerAusencia(hubId, dataIso, turnoId, nome, campo, supe
     atualizadoPor: supervisor,
     atualizadoEm: serverTimestamp()
   }, { merge: true });
+}
+
+// ================= confirmação e comparecimento (por nome, dentro do turno) =================
+// "Confirmou horário": alternador simples (confirmado ou ainda não), igual à folga/falta.
+export async function alternarConfirmacao(hubId, dataIso, turnoId, nome, confirmado, supervisor) {
+  await setDoc(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
+    hubId,
+    data: dataIso,
+    confirmacoes: { [turnoId]: confirmado ? arrayUnion(nome) : arrayRemove(nome) },
+    atualizadoPor: supervisor,
+    atualizadoEm: serverTimestamp()
+  }, { merge: true });
+}
+
+// "Compareceu?": três estados — pendente (nenhuma marca), compareceu ou não
+// compareceu. "Não compareceu" usa o mesmo campo `faltas` de sempre (o
+// horário volta a contar como descoberto); "compareceu" é um campo novo,
+// só para registro. Um nome nunca fica nos dois ao mesmo tempo.
+export async function marcarComparecimento(hubId, dataIso, turnoId, nome, valor, supervisor) {
+  const campo = valor === 'sim' ? 'compareceram' : 'faltas';
+  const outro = valor === 'sim' ? 'faltas' : 'compareceram';
+  await setDoc(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
+    hubId,
+    data: dataIso,
+    [campo]: { [turnoId]: arrayUnion(nome) },
+    [outro]: { [turnoId]: arrayRemove(nome) },
+    atualizadoPor: supervisor,
+    atualizadoEm: serverTimestamp()
+  }, { merge: true });
+}
+
+export async function removerComparecimento(hubId, dataIso, turnoId, nome, supervisor) {
+  await setDoc(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
+    hubId,
+    data: dataIso,
+    faltas: { [turnoId]: arrayRemove(nome) },
+    compareceram: { [turnoId]: arrayRemove(nome) },
+    atualizadoPor: supervisor,
+    atualizadoEm: serverTimestamp()
+  }, { merge: true });
+}
+
+// ================= leitura avulsa (sem escuta) para ferramentas de admin =================
+// Usada pela geração da escala-base e pelos indicadores de confiabilidade,
+// que leem um período, calculam e não precisam ficar escutando depois.
+export async function lerEscalas(inicioIso, fimIso) {
+  const q = query(
+    collection(obterDb(), 'escalas'),
+    where('data', '>=', inicioIso),
+    where('data', '<=', fimIso)
+  );
+  const snap = await getDocs(q);
+  const mapa = {};
+  snap.forEach((d) => { mapa[d.id] = d.data(); });
+  return mapa;
+}
+
+// Grava várias vagas de uma vez (geração da escala-base dos colaboradores
+// fixos), num único lote — tudo ou nada.
+export async function salvarVagasEmLote(escritas) {
+  const batch = writeBatch(obterDb());
+  for (const { hubId, dataIso, turnoId, indice, dados, supervisor } of escritas) {
+    batch.set(doc(obterDb(), 'escalas', `${hubId}_${dataIso}`), {
+      hubId,
+      data: dataIso,
+      slots: { [turnoId]: { [String(indice)]: dados } },
+      atualizadoPor: supervisor,
+      atualizadoEm: serverTimestamp()
+    }, { merge: true });
+  }
+  await batch.commit();
 }

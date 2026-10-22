@@ -14,11 +14,13 @@ service cloud.firestore {
       allow write: if ehAdmin();
     }
 
-    // Escala: supervisores leem e preenchem vagas, folgas e faltas
+    // Escala: supervisores leem e preenchem vagas, folgas, faltas,
+    // confirmações de horário e comparecimento
     match /escalas/{docId} {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasOnly(
-          ['hubId', 'data', 'slots', 'folgas', 'faltas', 'atualizadoPor', 'atualizadoEm'])
+          ['hubId', 'data', 'slots', 'folgas', 'faltas', 'confirmacoes', 'compareceram',
+           'atualizadoPor', 'atualizadoEm'])
         && request.resource.data.data is string
         && request.resource.data.hubId is string;
       allow delete: if ehAdmin();

@@ -30,6 +30,8 @@ Os dados ficam no Firebase (Firestore). O site é 100% estático e roda no Netli
 1. Abra o arquivo **`firestore.rules`** e troque o e-mail de exemplo pelo seu e-mail de admin.
 2. No Firebase, vá em **Firestore Database → Regras**, apague o conteúdo, cole o arquivo inteiro e clique em **Publicar**.
 
+> Sempre que o arquivo `firestore.rules` for atualizado (como agora, com os campos de confirmação e comparecimento), repita o passo 2 — sem isso, o Firestore recusa as gravações novas.
+
 Com isso: qualquer pessoa com o link vê e preenche a escala, mas só o administrador altera os cadastros.
 
 ## 4. Subir no GitHub e no Netlify
@@ -56,19 +58,23 @@ Com isso: qualquer pessoa com o link vê e preenche a escala, mas só o administ
 | Tipo de contrato | Fixo, freelancer ou intermitente, perguntado para cada nome lançado; volta a "não confirmado" se o nome for trocado |
 | Supervisor sobressalente | Na aba Colaboradores, marque quem fica na operação como reforço (não ocupa vaga fixa). Quando a folga dele é lançada num turno e a vaga correspondente fica vazia, ela some da contagem de furos ("Dispensado" em vez de "0/1"); ainda dá para lançar um reforço ali se quiser |
 | Vaga dividida | O botão "Dividir horário" permite cobrir uma vaga com duas ou mais pessoas em horários quebrados (ex: freela das 12:00 às 17:00 e intermitente das 17:00 às 00:00). A vaga só fica completa quando não sobra buraco; enquanto sobrar, aparece "Falta cobrir HH:MM–HH:MM" |
-| Folgas e faltas | Campo em cada turno de cada dia; o botão "Faltou" no nome escalado lança a falta e a vaga volta a contar como descoberta |
+| Folgas e faltas | Campo em cada turno de cada dia, para quem não está numa vaga específica; lançar como falta tira da folga e vice-versa |
+| Confirmou horário / Compareceu | Em cada pessoa escalada, direto na grade: um botão "Confirmou horário" (alternador) e dois botões "Compareceu" / "Não compareceu" (um exclui o outro; tocar de novo no mesmo desmarca, voltando a pendente). "Não compareceu" volta a contar como vaga descoberta, igual ao antigo "Faltou" |
 | Celular | Faixa com os 7 dias no topo e um dia aberto por vez |
 | Conflitos | Aviso em vermelho se a mesma pessoa estiver em dois turnos que se sobrepõem (inclusive em hubs diferentes) ou escalada num turno em que está de folga |
 | Feriados | Nacionais e datas comemorativas calculados automaticamente (Carnaval, Páscoa, Dia das Mães, Black Friday etc.); feriados da cidade são cadastrados na página 1 |
 | Tempo real | Se duas pessoas estiverem com a mesma página aberta, uma vê o que a outra lança sem recarregar |
 | Buracos na escala | Em Cadastros → aba "Buracos na escala": por hub (ou todos juntos) e por período (semana ou mês), lista os trechos de horário que ainda não têm gente suficiente, turno por turno, somando vagas vazias e vagas parcialmente cobertas. O botão "Copiar lista" copia tudo em texto simples, pronto para colar num grupo |
 | Lembrete de prazo | Na página da escala, toda segunda e sexta das 14h às 16h aparece uma faixa com a contagem regressiva para lançar a escala (segunda = semana atual, sexta = semana seguinte) e se já está lançada/completa; depois das 16h, mostra "Prazo encerrado" por 24h com a mesma informação; fora dessas janelas, some. Vale para todos os hubs juntos e usa a hora real do aparelho, então funciona igual em qualquer dispositivo ou depois de recarregar |
+| Colaborador fixo e escala-base | Em Cadastros → aba Colaboradores, marque "Fixo" em quem tem um padrão único (dias da semana + 1 turno) e escolha o turno e os dias. Depois, em "Gerar escala-base", escolha hub e período e clique em Gerar: preenche automaticamente as vagas ainda vazias desses colaboradores, sem mexer no que já foi preenchido à mão nem duplicar quem já está escalado |
+| Indicadores de confiabilidade | Em Cadastros → aba "Indicadores de confiabilidade": por colaborador, calcula % de confirmação de horário e % de comparecimento (excluindo quem ainda está pendente de marcação) no período escolhido, e classifica como Confiável, Em observação, Não confiável ou Sem dados suficientes. Os limites (padrão: confiável a partir de 90%, não confiável abaixo de 70%) são configuráveis no topo da aba |
 
 ### Estrutura dos dados
 
-- `config/principal`: todos os cadastros (um documento só).
-- `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas e as faltas de um hub em um dia.
+- `config/principal`: todos os cadastros (um documento só), incluindo `limitesConfiabilidade` (os limites da classificação).
+- `escalas/{hubId}_{AAAA-MM-DD}`: as vagas preenchidas, as folgas, as faltas, as confirmações de horário e os comparecimentos de um hub em um dia.
   Cada vaga guarda uma lista de pessoas: `{partes: [{nome, tipo, inicio, fim}]}`. Sem `inicio`/`fim`, a pessoa cobre o turno inteiro.
+  `confirmacoes` e `compareceram` guardam, por turno, os nomes marcados — mesmo formato de `folgas`/`faltas`.
 
 ### Arquivos
 

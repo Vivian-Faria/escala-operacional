@@ -1,5 +1,8 @@
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
-import { configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia } from './db.js';
+import {
+  configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,
+  alternarConfirmacao, marcarComparecimento, removerComparecimento
+} from './db.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
@@ -100,8 +103,14 @@ const supervisoresSobressalentes = () => new Set(
 function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
   const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
+  const compareceram = new Set(listaDoTurno(iso, 'compareceram', t.id).map(normalizaNome));
+  const confirmacoes = new Set(listaDoTurno(iso, 'confirmacoes', t.id).map(normalizaNome));
   const faltou = (nome) => faltas.has(normalizaNome(nome));
-  const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou));
+  const marcas = {
+    compareceu: (nome) => (faltou(nome) ? 'nao' : (compareceram.has(normalizaNome(nome)) ? 'sim' : '')),
+    confirmou: (nome) => confirmacoes.has(normalizaNome(nome))
+  };
+  const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou, marcas));
 
   // Vaga vazia + folga de um supervisor sobressalente naquele turno = não é furo.
   // Cada folga de supervisor "perdoa" uma vaga vazia; sobrando vagas vazias
@@ -115,10 +124,15 @@ function situacaoVagas(iso, t, dow) {
   return vagas;
 }
 
-function montarVaga(t, partes, faltou) {
+function montarVaga(t, partes, faltou, marcas) {
   const cob = cobertura(t, partes, faltou);
   return {
-    partes: partes.map((p) => ({ ...p, faltou: Boolean(p.nome && faltou(p.nome)) })),
+    partes: partes.map((p) => ({
+      ...p,
+      faltou: Boolean(p.nome && faltou(p.nome)),
+      compareceuEstado: p.nome ? marcas.compareceu(p.nome) : '',
+      confirmou: Boolean(p.nome && marcas.confirmou(p.nome))
+    })),
     dividida: ehDividida(partes),
     coberta: cob.coberta,
     buracos: cob.buracos,
@@ -331,7 +345,16 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
       ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Fixo, freela ou intermitente?</span>' : ''}
       ${Object.entries(TIPOS).map(([valor, tp]) => `<button type="button" data-tipo-vaga="${chave}" data-valor="${valor}"
         aria-pressed="${p.tipo === valor}" aria-label="${valor === 'fixo' ? 'Fixo' : valor === 'freelancer' ? 'Freelancer' : 'Intermitente'}" ${dis}>${tp.botao}</button>`).join('')}
-      <button type="button" class="btn-faltou" data-faltou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}" aria-pressed="${p.faltou}" ${dis}>Faltou</button>
+    </div>
+    <div class="presenca" role="group" aria-label="Presença de ${escapeHtml(p.nome)}">
+      <button type="button" class="btn-confirmou" data-confirmou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}"
+        aria-pressed="${p.confirmou}" ${dis}>Confirmou horário</button>
+      <span class="compareceu-grupo">
+        <button type="button" class="btn-compareceu sim" data-compareceu="${iso}|${t.id}|sim" data-nome="${escapeHtml(p.nome)}"
+          aria-pressed="${p.compareceuEstado === 'sim'}" ${dis}>Compareceu</button>
+        <button type="button" class="btn-compareceu nao" data-compareceu="${iso}|${t.id}|nao" data-nome="${escapeHtml(p.nome)}"
+          aria-pressed="${p.compareceuEstado === 'nao'}" ${dis}>Não compareceu</button>
+      </span>
     </div>` : '';
   return `<div class="parte${p.faltou ? ' faltou' : ''}">
     <div class="parte-nome">
@@ -342,7 +365,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
     </div>
     ${horas}
-    ${p.faltou ? '<p class="vaga-furo">Faltou. O horário está descoberto.</p>' : ''}
+    ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
     ${acoes}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
   </div>`;
@@ -865,15 +888,19 @@ document.addEventListener('click', (e) => {
   } else if (ds.tirarParte) {
     const [iso, turnoId, idx, pi] = ds.tirarParte.split('|');
     tirarParte(iso, turnoId, Number(idx), Number(pi));
-  } else if (ds.faltou) {
-    const [iso, turnoId] = ds.faltou.split('|');
-    const registrado = nomeNaLista(iso, 'faltas', turnoId, ds.nome);
-    if (registrado) {
-      gravar(() => removerAusencia(estado.hubId, iso, turnoId, registrado, 'faltas', nomeSupervisor()), 'Falta retirada');
+  } else if (ds.confirmou) {
+    const [iso, turnoId] = ds.confirmou.split('|');
+    const jaConfirmado = b.getAttribute('aria-pressed') === 'true';
+    gravar(() => alternarConfirmacao(estado.hubId, iso, turnoId, ds.nome, !jaConfirmado, nomeSupervisor()),
+      jaConfirmado ? 'Confirmação retirada' : `Horário confirmado com ${ds.nome}`);
+  } else if (ds.compareceu) {
+    const [iso, turnoId, valor] = ds.compareceu.split('|');
+    const jaMarcado = b.getAttribute('aria-pressed') === 'true';
+    if (jaMarcado) {
+      gravar(() => removerComparecimento(estado.hubId, iso, turnoId, ds.nome, nomeSupervisor()), 'Marcação retirada');
     } else {
-      const deFolga = nomeNaLista(iso, 'folgas', turnoId, ds.nome);
-      gravar(() => lancarAusencia(estado.hubId, iso, turnoId, deFolga || ds.nome, 'faltas', nomeSupervisor()),
-        `Falta lançada para ${ds.nome}`);
+      gravar(() => marcarComparecimento(estado.hubId, iso, turnoId, ds.nome, valor, nomeSupervisor()),
+        valor === 'sim' ? `${ds.nome} marcado como presente` : `${ds.nome} marcado como ausente`);
     }
   } else if (ds.lancar) {
     lancar(b.closest('.aus-add').querySelector('input'), ds.lancar);
