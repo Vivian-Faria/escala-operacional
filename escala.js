@@ -328,7 +328,9 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
   const dis = travado ? 'disabled' : '';
   const rotulo = mostrarHoras ? `${t.nome}, vaga ${i + 1}, pessoa ${pi + 1}, ${rotDia}` : `${t.nome}, vaga ${i + 1}, ${rotDia}`;
   const quem = escapeHtml(p.nome) || `pessoa ${pi + 1}`;
-  const horas = mostrarHoras ? `
+  // Horário sempre editável por pessoa (não só quando a vaga é dividida):
+  // freelancer/intermitente muitas vezes não cobre o horário cheio do turno.
+  const horas = `
     <div class="horas">
       <label class="hora"><span>Entra</span>
         <input type="time" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
@@ -336,7 +338,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
       <label class="hora"><span>Sai</span>
         <input type="time" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
-    </div>` : '';
+    </div>`;
   const acoes = temNome ? `
     <div class="tipo" role="group" aria-label="Tipo de contrato de ${escapeHtml(p.nome)}">
       ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Tipo:</span>' : ''}
