@@ -334,7 +334,7 @@ function renderSupervisores() {
 function renderColaboradores() {
   const opcoesHub = hubsOrdenados().map((h) => `<option value="${h.id}">${escapeHtml(h.nome)}</option>`).join('');
   el.conteudo.innerHTML = `
-    ${cabecalho('Colaboradores', 'Só quem está cadastrado aqui aparece para o supervisor escolher na escala — cadastre a pessoa antes de escalá-la, inclusive um freelancer novo. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
+    ${cabecalho('Colaboradores', 'Cadastre aqui para usar nos indicadores de confiabilidade e na escala-base automática. Na escala, o supervisor ainda digita o nome livremente (não precisa estar cadastrado antes) — por isso, se alguém aparecer com grafias diferentes nos Indicadores, cadastre a pessoa e use o campo "Outras grafias já usadas" para unificar. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
     <form class="add-colabs" data-form="colab">
       <label class="campo campo-largo">
         <span>Nomes, um por linha</span>

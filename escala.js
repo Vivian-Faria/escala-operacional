@@ -255,32 +255,10 @@ function renderSeletores() {
   atualizarUrl();
 }
 
-// Nomes selecionáveis: só colaboradores já cadastrados (do hub + os sem hub
-// definido), para o supervisor não digitar nomes soltos e gerar variações.
-function colaboradoresDoHub() {
-  const todos = estado.cfg.colaboradores;
-  let lista = todos.filter((c) => !c.hubId || c.hubId === estado.hubId);
-  if (!lista.length) lista = todos;
-  return [...lista].sort(porNome);
-}
-
-// Monta as <option> de um <select> de nome: placeholder + cadastrados do hub.
-// Se o valor atual não estiver mais nos cadastros (nome digitado antes desta
-// restrição, ou de outro hub), mantém ele como opção extra — para não apagar
-// silenciosamente quem já estava lançado.
-function opcoesColaboradores(valorAtual, placeholder) {
-  const lista = colaboradoresDoHub();
-  const existe = lista.some((c) => c.nome === valorAtual);
-  const extra = valorAtual && !existe
-    ? `<option value="${escapeHtml(valorAtual)}" selected>${escapeHtml(valorAtual)} (não cadastrado)</option>`
-    : '';
-  return `<option value="">${escapeHtml(placeholder)}</option>${extra}`
-    + lista.map((c) => `<option value="${escapeHtml(c.nome)}"${c.nome === valorAtual ? ' selected' : ''}>${escapeHtml(c.nome)}</option>`).join('');
-}
-
 function atualizarDatalist() {
-  // Mantido por compatibilidade com chamadas existentes (troca de hub, etc.);
-  // os <select> são remontados no próximo render(), que já lê os cadastros atuais.
+  // Nomes são digitados livremente nos campos da escala (sem restrição a
+  // cadastrados); nada a atualizar aqui. Mantido por compatibilidade com
+  // chamadas existentes (troca de hub, etc.).
 }
 
 function atualizarUrl() {
@@ -376,9 +354,9 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
   const tudoOk = temNome && !p.faltou && p.confirmou && p.compareceuEstado === 'sim';
   return `<div class="parte${p.faltou ? ' faltou' : ''}${tudoOk ? ' ok' : ''}">
     <div class="parte-nome">
-      <select class="${p.nome ? '' : 'vazio'}" aria-label="${escapeHtml(rotulo)}" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
-        ${opcoesColaboradores(p.nome, mostrarHoras ? 'Quem cobre' : 'Descoberta')}
-      </select>
+      <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
+        placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
+        data-parte="${chave}" data-foco="v|${chave}" ${dis}>
       ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
     </div>
@@ -411,10 +389,8 @@ function htmlVagaDispensada(iso, t, i, v, travado, rotDia) {
   const chave = `${iso}|${t.id}|${i}|0`;
   return `<div class="vaga dispensada">
     <p class="vaga-dispensa">Folga de ${escapeHtml(v.dispensada)} — vaga sobressalente, não conta como furo</p>
-    <select aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
-      data-parte="${chave}" data-foco="v|${chave}" ${dis}>
-      ${opcoesColaboradores('', 'Reforço opcional')}
-    </select>
+    <input type="text" aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
+      placeholder="Reforço opcional" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
   </div>`;
 }
 
@@ -439,10 +415,8 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
     ${total ? `<ul class="aus-lista">${faltas.map((n) => chip(n, 'faltas')).join('')}${folgas.map((n) => chip(n, 'folgas')).join('')}</ul>` : ''}
     ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
     <div class="aus-add">
-      <select aria-label="Nome para lançar folga ou falta em ${escapeHtml(t.nome)}, ${rotDia}"
-        data-aus="${iso}|${t.id}" data-foco="a|${iso}|${t.id}" ${dis}>
-        ${opcoesColaboradores('', 'Nome')}
-      </select>
+      <input type="text" aria-label="Nome para lançar folga ou falta em ${escapeHtml(t.nome)}, ${rotDia}"
+        placeholder="Nome" data-aus="${iso}|${t.id}" data-foco="a|${iso}|${t.id}" ${dis}>
       <button type="button" data-lancar="folgas" ${dis}>Folga</button>
       <button type="button" data-lancar="faltas" ${dis}>Falta</button>
     </div>
