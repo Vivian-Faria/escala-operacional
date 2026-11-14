@@ -318,7 +318,7 @@ select:focus-visible {
 .faixa-noite { --faixa: var(--noite); --faixa-forte: var(--noite-forte); }
 
 .turno-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin-bottom: 6px; }
-.turno-nome { font-weight: 800; font-size: 14px; color: var(--faixa-forte); text-transform: uppercase; letter-spacing: .02em; }
+.turno-nome { font-weight: 800; font-size: 14px; color: var(--tinta); text-transform: uppercase; letter-spacing: .02em; }
 .turno-hora { color: var(--grafite); font-size: 12px; }
 .turno-cont { margin-left: auto; font-size: 12.5px; font-weight: 750; }
 .turno-cont.completo { color: var(--ok); }
@@ -494,8 +494,6 @@ select:focus-visible {
 .cel:nth-child(7n) { border-right: 0; }
 .cel.fora { background: var(--papel); }
 button.cel:hover { background: rgba(255, 255, 255, .05); }
-.cel.com-furo:not(.passado) { background: var(--furo-fundo); }
-.cel.com-furo:not(.passado):hover { background: rgba(251, 113, 133, .22); }
 .cel-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
 .cel-num { font-stretch: 66%; font-weight: 800; font-size: 28px; line-height: 1; }
 .cel.passado .cel-num { color: var(--nevoa); }
@@ -530,7 +528,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   padding-left: 6px; border-left: 3px solid var(--faixa-forte);
 }
 .nt-rot { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 10.5px; line-height: 1.2; }
-.nt-nome { font-weight: 800; color: var(--faixa-forte); text-transform: uppercase; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-nome { font-weight: 800; color: var(--grafite); text-transform: uppercase; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-cont { flex: none; font-weight: 800; }
 .nt-cont.completo { color: var(--ok); }
 .nt-cont.incompleto { color: var(--furo); }
