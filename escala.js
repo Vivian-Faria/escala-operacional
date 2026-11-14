@@ -333,10 +333,12 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
   const horas = `
     <div class="horas">
       <label class="hora"><span>Entra</span>
-        <input type="time" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
+        <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
+          class="campo-hora" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
           data-hora="${chave}|inicio" data-foco="hi|${chave}" ${dis}></label>
       <label class="hora"><span>Sai</span>
-        <input type="time" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
+        <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
+          class="campo-hora" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
     </div>`;
   const acoes = temNome ? `

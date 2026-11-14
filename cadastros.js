@@ -261,8 +261,10 @@ function linhaTurno(t) {
   const base = `data-tipo="turno" data-id="${t.id}"`;
   return `<tr class="faixa-${faixaDoDia(t.inicio)}" data-linha="${t.id}">
     <td class="col-nome"><input type="text" class="in-nome" placeholder="Nome, ex: Almoço" aria-label="Nome do turno" ${base} data-campo="nome" value="${escapeHtml(t.nome)}"></td>
-    <td><input type="time" aria-label="Início" ${base} data-campo="inicio" value="${t.inicio}"></td>
-    <td><input type="time" aria-label="Fim" ${base} data-campo="fim" value="${t.fim}"></td>
+    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
+      class="campo-hora" aria-label="Início" ${base} data-campo="inicio" value="${t.inicio}"></td>
+    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
+      class="campo-hora" aria-label="Fim" ${base} data-campo="fim" value="${t.fim}"></td>
     <td class="col-todos"><input type="number" min="0" max="99" inputmode="numeric" placeholder="–" aria-label="Mesmo número de vagas em todos os dias" ${base} data-campo="todos"></td>
     ${vagas.map((v, i) => `<td><input type="number" min="0" max="99" inputmode="numeric" aria-label="Vagas ${DIAS_LONGO[i]}" ${base} data-campo="vaga" data-dia="${i}" value="${v}"></td>`).join('')}
     <td class="col-total" data-total="${t.id}">${vagasSemana(t)}</td>
