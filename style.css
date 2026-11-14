@@ -3,43 +3,44 @@
    Vermelho = vaga descoberta ou falta. Laranja = conflito de escala.
    ============================================================ */
 :root {
-  --papel: #0d1325;
-  --superficie: #182140;
-  --superficie2: #1f2a4e;
-  --tinta: #eef1fb;
-  --grafite: #93a0c8;
-  --nevoa: #5b6690;
-  --linha: #2b3963;
-  --linha-forte: #3c4d7c;
+  --papel: #0a0f0a;
+  --superficie: #141a13;
+  --superficie2: #1c241a;
+  --tinta: #eef3ea;
+  --grafite: #9fb09a;
+  --nevoa: #5f6e5c;
+  --linha: #253026;
+  --linha-forte: #3a4a34;
 
-  --acento: #5eead4;
-  --acento2: #38bdf8;
-  --texto-contraste: #05222a;
+  --acento: #baf26a;
+  --acento2: #eaffb8;
+  --texto-contraste: #10210a;
+  --brilho: 0 0 28px rgba(186, 242, 106, .35);
 
-  --ok: #4ade80;
-  --ok-fundo: rgba(74, 222, 128, .16);
-  --furo: #fb7185;
-  --furo-fundo: rgba(251, 113, 133, .16);
-  --furo-texto: #ff9fad;
-  --conflito: #fbbf24;
-  --conflito-fundo: rgba(251, 191, 36, .16);
-  --alerta: #ff8fa3;
-  --foco: #38bdf8;
+  --ok: #7cd977;
+  --ok-fundo: rgba(124, 217, 119, .16);
+  --furo: #ff6b6b;
+  --furo-fundo: rgba(255, 107, 107, .14);
+  --furo-texto: #ff9b9b;
+  --conflito: #ffc14d;
+  --conflito-fundo: rgba(255, 193, 77, .16);
+  --alerta: #ff8a8a;
+  --foco: #baf26a;
 
-  --feriado: #c084fc;
-  --feriado-fundo: rgba(192, 132, 252, .16);
-  --comemorativa: #67e8f9;
-  --comemorativa-fundo: rgba(103, 232, 249, .14);
+  --feriado: #c9a6ff;
+  --feriado-fundo: rgba(201, 166, 255, .16);
+  --comemorativa: #7dd3fc;
+  --comemorativa-fundo: rgba(125, 211, 252, .14);
 
-  --manha: #60a5fa;
-  --tarde: #2dd4bf;
-  --noite: #818cf8;
-  --manha-forte: #93c5fd;
-  --tarde-forte: #5eead4;
-  --noite-forte: #a5b4fc;
+  --manha: #7dd3fc;
+  --tarde: #34d399;
+  --noite: #a78bfa;
+  --manha-forte: #93dffc;
+  --tarde-forte: #4ade80;
+  --noite-forte: #c4b5fd;
 
-  --raio-p: 8px;
-  --raio-m: 16px;
+  --raio-p: 10px;
+  --raio-m: 20px;
   --margem: clamp(16px, 3vw, 32px);
   --fonte: 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -48,7 +49,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 50% -200px, #1b2a5c 0%, var(--papel) 60%) fixed;
+  background: radial-gradient(1300px 700px at 50% -10%, #1c2a12 0%, var(--papel) 55%) fixed;
   color: var(--tinta);
   font-family: var(--fonte);
   font-size: 15px;
@@ -58,7 +59,7 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
-:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; box-shadow: 0 0 0 5px rgba(186, 242, 106, .16); border-radius: var(--raio-p); }
 [hidden] { display: none !important; }
 a { color: inherit; }
 code { font-size: .9em; background: var(--papel); padding: 1px 5px; border-radius: 3px; }
@@ -88,10 +89,10 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 
 .btn-primario {
   background: linear-gradient(90deg, var(--acento), var(--acento2)); color: var(--texto-contraste); border: 0;
-  border-radius: var(--raio-p); padding: 10px 18px; min-height: 40px;
-  font-weight: 700; white-space: nowrap;
+  border-radius: 999px; padding: 10px 20px; min-height: 40px;
+  font-weight: 700; white-space: nowrap; box-shadow: var(--brilho);
 }
-.btn-primario:hover { filter: brightness(1.08); }
+.btn-primario:hover { filter: brightness(1.06); }
 .btn-secundario {
   background: var(--superficie); border: 1px solid var(--linha-forte);
   border-radius: var(--raio-p); padding: 9px 16px; min-height: 40px; font-weight: 600;
@@ -140,7 +141,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
   position: fixed; left: 50%; bottom: 20px; z-index: 50;
   transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
   max-width: calc(100vw - 32px);
-  background: var(--superficie2); color: var(--tinta); border: 1px solid var(--linha-forte);
+  background: var(--superficie2); color: var(--tinta); border: 1px solid rgba(186, 242, 106, .3);
   padding: 10px 16px; border-radius: var(--raio-m); box-shadow: 0 10px 30px rgba(0,0,0,.35);
   font-size: 14px; transition: opacity .18s, transform .18s;
 }
@@ -213,7 +214,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .dia-cont { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: 12.5px; }
 .dia-fracao { color: var(--grafite); }
 
-.dia.hoje { box-shadow: inset 0 4px 0 var(--acento); }
+.dia.hoje { box-shadow: inset 0 4px 0 var(--acento), 0 0 20px rgba(186, 242, 106, .12); }
 .dia.hoje .dia-sem { color: var(--acento); font-weight: 650; }
 .dia.passado .dia-num { color: var(--nevoa); }
 
@@ -425,7 +426,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .cel-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
 .cel-num { font-stretch: 66%; font-weight: 800; font-size: 28px; line-height: 1; }
 .cel.passado .cel-num { color: var(--nevoa); }
-.cel.hoje { box-shadow: inset 0 4px 0 var(--acento); }
+.cel.hoje { box-shadow: inset 0 4px 0 var(--acento), 0 0 16px rgba(186, 242, 106, .12); }
 .cel-furo {
   min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px;
   display: inline-grid; place-items: center;
@@ -539,7 +540,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .chip-dia.passado .cd-marca.furo { background: var(--furo-fundo); color: var(--furo-texto); }
 .chip-dia.hoje { border: 2px solid var(--acento); }
 .chip-dia.tem-feriado, .chip-dia.tem-facultativo { background: var(--feriado-fundo); }
-.chip-dia.sel { background: var(--acento); border-color: var(--acento); }
+.chip-dia.sel { background: var(--acento); border-color: var(--acento); box-shadow: 0 0 16px rgba(186, 242, 106, .3); }
 .chip-dia.sel .cd-sem, .chip-dia.sel .cd-num { color: var(--texto-contraste); }
 .chip-dia.sel .cd-marca.ok { color: #04613d; }
 
