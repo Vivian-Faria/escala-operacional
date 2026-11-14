@@ -84,6 +84,76 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* ---------- seleção (dropdowns) ---------- */
+/* O <select> original fica escondido (custom-select.js troca a aparência
+   por ".vidro-select" abaixo); isto aqui é só uma rede de segurança caso
+   o JS não rode — mostra o select normal, com seta e cantos no mesmo tema. */
+select {
+  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  border-radius: var(--raio-m); border-color: rgba(186, 242, 106, .22);
+  background-color: var(--superficie);
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--grafite) 50%),
+    linear-gradient(135deg, var(--grafite) 50%, transparent 50%);
+  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  transition: border-color .15s, box-shadow .15s;
+}
+select:hover { border-color: var(--acento); }
+select:focus-visible {
+  border-color: var(--acento); box-shadow: 0 0 0 4px rgba(186, 242, 106, .14);
+}
+
+/* ---------- "vidro-select": o menu customizado (custom-select.js) ---------- */
+.vidro-select { position: relative; display: inline-block; min-width: 0; }
+.vidro-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 40px; padding: 8px 14px; text-align: left;
+  background: var(--superficie); color: var(--tinta);
+  border: 1px solid rgba(186, 242, 106, .22); border-radius: var(--raio-m);
+  transition: border-color .15s, box-shadow .15s;
+}
+.vidro-btn:hover { border-color: var(--acento); }
+.vidro-btn:focus-visible {
+  outline: none; border-color: var(--acento); box-shadow: 0 0 0 4px rgba(186, 242, 106, .16);
+}
+.vidro-select[aria-expanded="true"] .vidro-btn,
+.vidro-btn[aria-expanded="true"] { border-color: var(--acento); box-shadow: 0 0 0 4px rgba(186, 242, 106, .14); }
+.vidro-desabilitado .vidro-btn, .vidro-btn:disabled { opacity: .55; cursor: not-allowed; }
+.vidro-rotulo {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vidro-rotulo.vidro-vazio { color: var(--nevoa); }
+.vidro-seta {
+  flex: none; width: 9px; height: 9px; margin-top: -3px;
+  border-right: 2px solid var(--grafite); border-bottom: 2px solid var(--grafite);
+  transform: rotate(45deg); transition: transform .15s;
+}
+.vidro-btn[aria-expanded="true"] .vidro-seta { transform: rotate(225deg); margin-top: 3px; border-color: var(--acento); }
+
+.vidro-pop {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30;
+  transform-origin: top center; transform: scaleY(.92) translateY(-4px); opacity: 0;
+  pointer-events: none; transition: opacity .12s, transform .12s;
+  border: 1px solid rgba(186, 242, 106, .35); border-radius: var(--raio-m);
+  background: rgba(18, 24, 17, .82);
+  backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: 0 0 0 1px rgba(186, 242, 106, .08), 0 20px 50px rgba(0, 0, 0, .55), var(--brilho);
+  padding: 6px; max-height: 280px; overflow: auto;
+}
+.vidro-pop.aberto { opacity: 1; pointer-events: auto; transform: scaleY(1) translateY(0); }
+.vidro-lista { list-style: none; margin: 0; padding: 0; }
+.vidro-lista li {
+  padding: 9px 12px; border-radius: var(--raio-p); font-size: 14.5px;
+  color: var(--tinta); cursor: pointer; white-space: normal; word-break: break-word;
+}
+.vidro-lista li.ativo, .vidro-lista li:hover { background: rgba(186, 242, 106, .16); }
+.vidro-lista li[aria-selected="true"] { background: var(--acento); color: var(--texto-contraste); font-weight: 650; }
+.vidro-lista li[aria-selected="true"].ativo { background: var(--acento); filter: brightness(1.05); }
+.vidro-lista li[aria-disabled="true"] { color: var(--nevoa); cursor: not-allowed; }
+
 .campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .campo > span { font-size: 13px; color: var(--grafite); }
 
