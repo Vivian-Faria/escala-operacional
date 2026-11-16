@@ -20,6 +20,22 @@ const el = {
 };
 const mostrarStatus = criarStatus($('#status'));
 
+// ---- telefones dos colaboradores (a central de alertas guarda os números; aqui só se pergunta quem ainda está sem) ----
+const CENTRAL = 'https://controle-de-ponto-solides.netlify.app';
+const MSG_CADASTRO = 'Cadastre o telefone pelo link de equipe que a central enviou no seu WhatsApp (se perdeu, peça à gestão). Quem não tem celular: marque "Sem celular" naquela página.';
+const cadCache = { chave: '', faltam: [] };
+// devolve a lista de nomes sem telefone, ou null se a central não respondeu (nesse caso nada é bloqueado)
+async function checarTelefones(nomes) {
+  try {
+    const r = await fetch(`${CENTRAL}/api/alerta/checar`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ h: estado.hubId, nomes }), signal: AbortSignal.timeout(6000)
+    });
+    const j = await r.json();
+    return r.ok && Array.isArray(j.faltam) ? j.faltam : null;
+  } catch { return null; }
+}
+
 // Abaixo desta largura (celular e tablet) a semana mostra um dia por vez
 const TELA_COMPACTA = matchMedia('(max-width: 1099px)');
 
@@ -293,6 +309,7 @@ function render() {
   if (estado.modo === 'semana') renderSemana(); else renderMes();
   if (estado.diaAberto) renderDialogo();
   restaurarFoco(foco);
+  atualizarAvisoTelefones();
 
   document.querySelectorAll('.alternador button').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.modo === estado.modo));
@@ -716,13 +733,42 @@ function alterarParte(iso, turnoId, idx, pi, mudanca, msgOk) {
   return gravarPartes(iso, turnoId, idx, partes, msgOk);
 }
 
-function salvarNome(input) {
+// aviso fixo: colaboradores já escalados (de hoje em diante) neste hub que ainda estão sem telefone
+async function atualizarAvisoTelefones() {
+  const box = $('#cadTel'); if (!box) return;
+  if (!estado.hubId) { box.hidden = true; return; }
+  const hoje = hojeIso(), nomes = new Set();
+  for (const [k, d] of Object.entries(estado.escalas)) {
+    if (!k.startsWith(`${estado.hubId}_`) || k.slice(estado.hubId.length + 1) < hoje) continue;
+    for (const tid of Object.keys(d.slots || {})) for (const partes of vagasDe(d.slots[tid])) for (const p of partes) if (p?.nome) nomes.add(p.nome);
+  }
+  const lista = [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR')), chave = `${estado.hubId}|${lista.join('|')}`;
+  if (chave !== cadCache.chave) {
+    cadCache.chave = chave; cadCache.faltam = lista.length ? (await checarTelefones(lista)) || [] : [];
+    if (cadCache.chave !== chave) return;
+  }
+  const f = cadCache.faltam;
+  if (!f.length) { box.hidden = true; return; }
+  box.innerHTML = `<strong>📱 ${f.length === 1 ? '1 colaborador escalado está' : `${f.length} colaboradores escalados estão`} sem telefone cadastrado</strong><br>${f.map(escapeHtml).join(', ')}.<br>${escapeHtml(MSG_CADASTRO)}`;
+  box.hidden = false;
+}
+
+async function salvarNome(input) {
   const [iso, turnoId, idx, pi] = input.dataset.parte.split('|');
   const nome = limparNome(input.value);
   input.value = nome;
   const partes = partesAtuais(iso, turnoId, Number(idx));
   const atual = partes[Number(pi)] || { nome: '', tipo: '' };
   if (nome === atual.nome) return;
+  // escala de amanhã em diante: não aceita colaborador sem telefone cadastrado (hoje só avisa, para não travar ajuste de última hora)
+  if (nome && iso > hojeIso()) {
+    const faltam = await checarTelefones([nome]);
+    if (faltam && faltam.length) {
+      input.value = atual.nome || '';
+      alert(`Não foi possível lançar "${nome}" nesta data: essa pessoa ainda não tem telefone cadastrado.\n\n${MSG_CADASTRO}\n\nDepois de cadastrar, lance o nome de novo.`);
+      return;
+    }
+  }
   // Pessoa nova no horário: o tipo precisa ser confirmado de novo
   alterarParte(iso, turnoId, Number(idx), Number(pi), { nome, tipo: '' },
     nome ? 'Salvo. Confirme o tipo de contrato.' : 'Horário liberado');
