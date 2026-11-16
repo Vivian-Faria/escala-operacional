@@ -1,6 +1,6 @@
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
 import { configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote } from './db.js';
-import { entrar, sair, aoMudarLogin } from './auth.js';
+import { entrar, sair, aoMudarLogin, tokenAdmin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
@@ -19,6 +19,18 @@ const mostrarStatus = criarStatus($('#status'));
 let cfg = null;        // cópia de trabalho
 let original = '';     // último estado salvo (para saber se há alterações)
 let aba = 'hubs';
+// ---------- telefones dos colaboradores (a central de alertas lê daqui os números para os avisos) ----------
+const CENTRAL = 'https://controle-de-ponto-solides.netlify.app';
+const telNacional = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('55') && d.length > 11) d = d.slice(2); return d; };
+const telValido = (v) => { const d = telNacional(v); return d.length === 10 || d.length === 11; };
+const mascaraTel = (v) => {
+  const d = telNacional(v).slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+};
+const colabOk = (c) => telValido(c.tel) || Boolean(c.semTel);
 let hubTurnos = '';
 let filtroColab = '';
 
@@ -169,6 +181,12 @@ function validar() {
     }
   }
   for (const s of cfg.supervisores) if (!s.nome) return { aba: 'supervisores', msg: 'Há um supervisor sem nome.' };
+  // telefone: obrigatório para colaborador novo; quem já existia sem telefone continua salvando, mas fica com ⚠️ e não entra na escala
+  const idsAntes = new Set((JSON.parse(original || '{}').colaboradores || []).map((c) => c.id));
+  for (const c of cfg.colaboradores) {
+    if (c.tel && !telValido(c.tel)) return { aba: 'colaboradores', msg: `O telefone de ${limparNome(c.nome)} está incompleto (use DDD + número).` };
+    if (!idsAntes.has(c.id) && limparNome(c.nome) && !colabOk(c)) return { aba: 'colaboradores', msg: `Informe o telefone de ${limparNome(c.nome)} (ou marque "Sem celular" e diga o motivo).` };
+  }
   for (const d of cfg.datasEspeciais) {
     if (!d.nome) return { aba: 'datas', msg: 'Há uma data especial sem nome.' };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.data || '')) return { aba: 'datas', msg: `Preencha a data de ${d.nome}.` };
@@ -336,11 +354,11 @@ function renderSupervisores() {
 function renderColaboradores() {
   const opcoesHub = hubsOrdenados().map((h) => `<option value="${h.id}">${escapeHtml(h.nome)}</option>`).join('');
   el.conteudo.innerHTML = `
-    ${cabecalho('Colaboradores', 'Cadastre aqui para usar nos indicadores de confiabilidade e na escala-base automática. Na escala, o supervisor ainda digita o nome livremente (não precisa estar cadastrado antes) — por isso, se alguém aparecer com grafias diferentes nos Indicadores, cadastre a pessoa e use o campo "Outras grafias já usadas" para unificar. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
+    ${cabecalho('Colaboradores', 'Cadastre aqui todo colaborador, com o telefone (obrigatório): só quem está cadastrado e com ✅ pode ser lançado na escala, e a central de alertas usa esses números para os avisos do turno. Se alguém aparecer com grafias diferentes nos Indicadores, use o campo "Outras grafias já usadas" para unificar. Marque como supervisor quem fica na operação de forma sobressalente: quando a folga dele for lançada e a vaga ficar vazia, ela não conta como furo na escala. Marque como fixo quem tem um padrão de dias da semana + 1 turno sempre igual, para gerar a escala-base automaticamente.')}
     <form class="add-colabs" data-form="colab">
       <label class="campo campo-largo">
-        <span>Nomes, um por linha</span>
-        <textarea id="novosColabs" rows="3" placeholder="Caio&#10;Rafael&#10;Lucas Luan" required></textarea>
+        <span>Nome e telefone, um por linha (telefone obrigatório)</span>
+        <textarea id="novosColabs" rows="3" placeholder="Caio - (31) 99999-0000&#10;Rafael - 31 98888-1111" required></textarea>
       </label>
       <label class="campo">
         <span>Hub</span>
@@ -353,6 +371,7 @@ function renderColaboradores() {
       <label class="sr" for="buscaColab">Buscar colaborador</label>
       <input type="search" id="buscaColab" placeholder="Buscar" value="${escapeHtml(filtroColab)}">
     </div>
+    <div class="lista-cab"><button type="button" class="btn-texto" data-acao="importar-tel">Importar telefones já cadastrados na central</button><span class="item-meta" id="resumoTel"></span></div>
     <ul class="lista" id="listaColabs"></ul>
     ${htmlGeracaoBase()}`;
   renderListaColabs();
@@ -465,15 +484,50 @@ async function gerarEscalaBase() {
   }
 }
 
+// traz os telefones que os líderes já cadastraram na central de alertas (só para quem está logado como administrador)
+async function importarTelefones() {
+  mostrarStatus('Buscando os telefones na central…', 'neutro', true);
+  try {
+    const idToken = await tokenAdmin();
+    if (!idToken) throw new Error('sem login');
+    const r = await fetch(`${CENTRAL}/api/alerta/tel-export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
+    let preenchidos = 0, criados = 0;
+    for (const [hubId, lista] of Object.entries(j.hubs || {})) {
+      for (const x of lista) {
+        const nome = limparNome(x.nome); if (!nome) continue;
+        const tel = telNacional(x.tel);
+        if (!x.semTel && !telValido(tel)) continue;
+        let c = cfg.colaboradores.find((k) => normalizaNome(k.nome) === normalizaNome(nome) && (!k.hubId || k.hubId === hubId))
+          || cfg.colaboradores.find((k) => normalizaNome(k.nome) === normalizaNome(nome));
+        if (!c) { c = { id: uid('col'), nome, hubId }; cfg.colaboradores.push(c); criados++; }
+        if (colabOk(c)) continue;
+        if (x.semTel) { c.semTel = true; c.motivoSemTel = x.motivo || 'informado pelo líder'; } else c.tel = tel;
+        preenchidos++;
+      }
+    }
+    marcar(); renderAba();
+    mostrarStatus(`${preenchidos} telefone${preenchidos === 1 ? '' : 's'} importado${preenchidos === 1 ? '' : 's'}${criados ? `, ${criados} colaborador${criados === 1 ? '' : 'es'} novo${criados === 1 ? '' : 's'}` : ''}. Clique em Salvar para guardar.`, 'ok', true);
+  } catch (e) {
+    console.error(e);
+    mostrarStatus('Não consegui importar da central agora. Tente de novo em instantes.', 'erro', true);
+  }
+}
+
 function renderListaColabs() {
   const alvo = $('#listaColabs');
   if (!alvo) return;
   const busca = normalizaNome(filtroColab);
   const lista = [...cfg.colaboradores].sort(porNome).filter((c) => !busca || normalizaNome(c.nome).includes(busca));
   if (!cfg.colaboradores.length) { alvo.outerHTML = '<p class="vazio" id="listaColabs">Nenhum colaborador cadastrado.</p>'; return; }
+  const resumo = $('#resumoTel'); if (resumo) { const ok = cfg.colaboradores.filter(colabOk).length; resumo.textContent = ` ✅ ${ok} de ${cfg.colaboradores.length} com telefone`; }
   alvo.innerHTML = lista.length ? lista.map((c) => `<li class="item item-empilhado">
     <div class="item-linha">
+      <span class="tel-ok" data-ok="${c.id}" title="${colabOk(c) ? 'Telefone cadastrado' : 'Falta o telefone'}">${colabOk(c) ? '✅' : '⚠️'}</span>
       <input type="text" aria-label="Nome do colaborador" data-tipo="colab" data-id="${c.id}" data-campo="nome" value="${escapeHtml(c.nome)}">
+      <input type="tel" inputmode="tel" placeholder="(31) 99999-0000" aria-label="Telefone de ${escapeHtml(c.nome)}" data-tipo="colab" data-id="${c.id}" data-campo="tel" value="${escapeHtml(mascaraTel(c.tel))}"${c.semTel ? ' disabled' : ''}>
+      <button type="button" class="chip" data-acao="semcel-colab" data-id="${c.id}" aria-pressed="${Boolean(c.semTel)}" title="${escapeHtml(c.motivoSemTel || 'Marque se a pessoa não tem celular')}">Sem celular</button>
       <select aria-label="Hub de ${escapeHtml(c.nome)}" data-tipo="colab" data-id="${c.id}" data-campo="hub">
         <option value="">Qualquer hub</option>
         ${hubsOrdenados().map((h) => `<option value="${h.id}"${h.id === c.hubId ? ' selected' : ''}>${escapeHtml(h.nome)}</option>`).join('')}
@@ -869,7 +923,11 @@ el.conteudo.addEventListener('input', (e) => {
     const c = cfg.colaboradores.find((x) => x.id === id);
     if (campo === 'hub') c.hubId = i.value;
     else if (campo === 'turnoFixo') c.turnoFixoId = i.value;
-    else if (campo === 'apelidos') {
+    else if (campo === 'tel') {
+      c.tel = telNacional(i.value); i.value = mascaraTel(c.tel);
+      const s = document.querySelector(`[data-ok="${id}"]`); if (s) s.textContent = colabOk(c) ? '✅' : '⚠️';
+      const r = $('#resumoTel'); if (r) r.textContent = ` ✅ ${cfg.colaboradores.filter(colabOk).length} de ${cfg.colaboradores.length} com telefone`;
+    } else if (campo === 'apelidos') {
       c.apelidos = i.value.split(',').map(limparNome).filter(Boolean);
     } else c.nome = i.value;
   } else if (tipo === 'data') {
@@ -922,13 +980,24 @@ el.conteudo.addEventListener('submit', (e) => {
 
   if (tipo === 'colab') {
     const hubId = $('#hubNovosColabs').value;
-    const nomes = $('#novosColabs').value.split('\n').map(limparNome).filter(Boolean);
+    const linhas = $('#novosColabs').value.split('\n').map((l) => l.trim()).filter(Boolean);
+    const nomes = [], ruins = [];
+    for (const l of linhas) {
+      const m = /^(.*?)[\s,;|–-]*((?:\+?55)?\s*\(?\d{2}\)?[\s.-]*9?[\s.-]?\d{4}[\s.-]?\d{4})\s*$/.exec(l);
+      const nome = m && limparNome(m[1]);
+      if (!m || !nome || !telValido(m[2])) { ruins.push(l); continue; }
+      nomes.push({ nome, tel: telNacional(m[2]) });
+    }
+    if (ruins.length) {
+      mostrarStatus(`Informe o nome e o telefone (com DDD) em cada linha. Revise: ${ruins.slice(0, 3).join(' | ')}${ruins.length > 3 ? '…' : ''}`, 'erro', true);
+      return;
+    }
     const existentes = new Set(cfg.colaboradores.map((c) => normalizaNome(c.nome)));
     let novos = 0;
-    for (const nome of nomes) {
+    for (const { nome, tel } of nomes) {
       if (existentes.has(normalizaNome(nome))) continue;
       existentes.add(normalizaNome(nome));
-      cfg.colaboradores.push({ id: uid('col'), nome, hubId });
+      cfg.colaboradores.push({ id: uid('col'), nome, hubId, tel });
       novos++;
     }
     const repetidos = nomes.length - novos;
@@ -1008,6 +1077,18 @@ el.conteudo.addEventListener('click', (e) => {
       cfg.supervisores = cfg.supervisores.filter((x) => x.id !== id);
       break;
     }
+    case 'semcel-colab': {
+      const c = cfg.colaboradores.find((x) => x.id === id);
+      if (c.semTel) { c.semTel = false; c.motivoSemTel = ''; } else {
+        const motivo = (prompt(`Por que ${c.nome} não tem celular? (ex.: não usa celular)`) || '').trim();
+        if (motivo.length < 3) return;
+        c.semTel = true; c.motivoSemTel = motivo; c.tel = '';
+      }
+      break;
+    }
+    case 'importar-tel':
+      importarTelefones();
+      return;
     case 'remover-colab':
       cfg.colaboradores = cfg.colaboradores.filter((x) => x.id !== id);
       break;
