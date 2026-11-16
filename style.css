@@ -906,3 +906,17 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .barra-periodo .nav-periodo h3 { margin: 0 8px; font-size: 17px; font-weight: 700; }
 .barra-periodo .barra-dir { display: flex; align-items: center; gap: 12px; }
 .barra-periodo .alternador button { padding: 6px 14px; min-height: 34px; font-size: 13.5px; }
+
+/* ---------- telefone do colaborador: caixa de vidro, número em verde ---------- */
+input[type=tel] {
+  width: 190px; flex: 0 0 190px; min-height: 40px; padding: 8px 12px;
+  border: 1px solid rgba(186, 242, 106, .30); border-radius: var(--raio-p);
+  background: linear-gradient(160deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .03));
+  backdrop-filter: blur(10px) saturate(140%); -webkit-backdrop-filter: blur(10px) saturate(140%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 0 18px -8px rgba(186, 242, 106, .45);
+  color: var(--acento); font-weight: 650; letter-spacing: .02em; font-variant-numeric: tabular-nums;
+}
+input[type=tel]::placeholder { color: var(--nevoa); font-weight: 400; }
+input[type=tel]:focus { outline: none; border-color: var(--acento); box-shadow: 0 0 0 3px rgba(186, 242, 106, .16), 0 0 22px -6px rgba(186, 242, 106, .55); }
+input[type=tel]:disabled { color: var(--nevoa); opacity: .55; }
+.tel-ok { font-size: 18px; line-height: 1; flex: none; }
