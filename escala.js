@@ -309,6 +309,7 @@ function render() {
   if (estado.modo === 'semana') renderSemana(); else renderMes();
   if (estado.diaAberto) renderDialogo();
   restaurarFoco(foco);
+  atualizarListaColabs();
   atualizarAvisoTelefones();
 
   document.querySelectorAll('.alternador button').forEach((b) => {
@@ -377,7 +378,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
     <div class="parte-nome">
       <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
         placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
-        data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+        list="colabsLista" autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
       ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
     </div>
@@ -411,7 +412,7 @@ function htmlVagaDispensada(iso, t, i, v, travado, rotDia) {
   return `<div class="vaga dispensada">
     <p class="vaga-dispensa">Folga de ${escapeHtml(v.dispensada)} — vaga sobressalente, não conta como furo</p>
     <input type="text" aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
-      placeholder="Reforço opcional" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+      placeholder="Reforço opcional" list="colabsLista" autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
   </div>`;
 }
 
@@ -733,7 +734,33 @@ function alterarParte(iso, turnoId, idx, pi, mudanca, msgOk) {
   return gravarPartes(iso, turnoId, idx, partes, msgOk);
 }
 
-// aviso fixo: colaboradores já escalados (de hoje em diante) neste hub que ainda estão sem telefone
+// ---- cadastro de colaboradores: só quem está cadastrado e com telefone (✅) pode ser lançado ----
+const colabDe = (nome) => {
+  const n = normalizaNome(nome);
+  return estado.cfg.colaboradores.find((c) => normalizaNome(c.nome) === n || (c.apelidos || []).some((a) => normalizaNome(a) === n));
+};
+const telOkLocal = (c) => {
+  let d = String(c?.tel || '').replace(/\D/g, ''); if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+  return d.length === 10 || d.length === 11 || Boolean(c?.semTel);
+};
+// 'ok' | 'sem-cadastro' | 'sem-tel'. Enquanto os telefones antigos não foram importados para o cadastro, vale também o que a central já tem.
+async function situacaoTelefone(nome) {
+  const c = colabDe(nome);
+  if (c && telOkLocal(c)) return 'ok';
+  const faltam = await checarTelefones([nome]);
+  if (faltam && !faltam.length) return 'ok';
+  return c ? 'sem-tel' : 'sem-cadastro';
+}
+// lista de sugestões: só colaboradores do hub com ✅
+function atualizarListaColabs() {
+  let dl = document.getElementById('colabsLista');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'colabsLista'; document.body.appendChild(dl); }
+  const ok = estado.cfg.colaboradores.filter((c) => telOkLocal(c) && (!c.hubId || c.hubId === estado.hubId));
+  const html = ok.sort(porNome).map((c) => `<option value="${escapeHtml(c.nome)}">✅ ${escapeHtml(c.nome)}</option>`).join('');
+  if (dl.dataset.h !== html) { dl.innerHTML = html; dl.dataset.h = html; }
+}
+
+// aviso fixo: colaboradores já escalados (de hoje em diante) neste hub que estão sem cadastro ou sem telefone
 async function atualizarAvisoTelefones() {
   const box = $('#cadTel'); if (!box) return;
   if (!estado.hubId) { box.hidden = true; return; }
@@ -742,14 +769,19 @@ async function atualizarAvisoTelefones() {
     if (!k.startsWith(`${estado.hubId}_`) || k.slice(estado.hubId.length + 1) < hoje) continue;
     for (const tid of Object.keys(d.slots || {})) for (const partes of vagasDe(d.slots[tid])) for (const p of partes) if (p?.nome) nomes.add(p.nome);
   }
-  const lista = [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR')), chave = `${estado.hubId}|${lista.join('|')}`;
+  const locais = [...nomes].filter((n) => !telOkLocal(colabDe(n))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const chave = `${estado.hubId}|${locais.join('|')}`;
   if (chave !== cadCache.chave) {
-    cadCache.chave = chave; cadCache.faltam = lista.length ? (await checarTelefones(lista)) || [] : [];
+    cadCache.chave = chave; cadCache.faltam = locais.length ? (await checarTelefones(locais)) || locais : [];
     if (cadCache.chave !== chave) return;
   }
   const f = cadCache.faltam;
   if (!f.length) { box.hidden = true; return; }
-  box.innerHTML = `<strong>📱 ${f.length === 1 ? '1 colaborador escalado está' : `${f.length} colaboradores escalados estão`} sem telefone cadastrado</strong><br>${f.map(escapeHtml).join(', ')}.<br>${escapeHtml(MSG_CADASTRO)}`;
+  const semCad = f.filter((n) => !colabDe(n)), semTel = f.filter((n) => colabDe(n));
+  box.innerHTML = `<strong>📱 ${f.length === 1 ? '1 colaborador escalado precisa' : `${f.length} colaboradores escalados precisam`} de cadastro</strong>`
+    + (semTel.length ? `<br>Sem telefone: ${semTel.map(escapeHtml).join(', ')}.` : '')
+    + (semCad.length ? `<br>Fora da lista de colaboradores: ${semCad.map(escapeHtml).join(', ')}.` : '')
+    + '<br>Informe em <a href="cadastros.html">Cadastros → Colaboradores</a> (telefone obrigatório, ou marque "Sem celular").';
   box.hidden = false;
 }
 
@@ -760,12 +792,14 @@ async function salvarNome(input) {
   const partes = partesAtuais(iso, turnoId, Number(idx));
   const atual = partes[Number(pi)] || { nome: '', tipo: '' };
   if (nome === atual.nome) return;
-  // escala de amanhã em diante: não aceita colaborador sem telefone cadastrado (hoje só avisa, para não travar ajuste de última hora)
-  if (nome && iso > hojeIso()) {
-    const faltam = await checarTelefones([nome]);
-    if (faltam && faltam.length) {
+  // só lança quem está na lista de colaboradores e com telefone cadastrado (✅)
+  if (nome) {
+    const sit = await situacaoTelefone(nome);
+    if (sit !== 'ok') {
       input.value = atual.nome || '';
-      alert(`Não foi possível lançar "${nome}" nesta data: essa pessoa ainda não tem telefone cadastrado.\n\n${MSG_CADASTRO}\n\nDepois de cadastrar, lance o nome de novo.`);
+      alert(sit === 'sem-cadastro'
+        ? `"${nome}" não está na lista de colaboradores.\n\nCadastre a pessoa em Cadastros → Colaboradores, com o telefone, e depois lance o nome aqui.`
+        : `"${nome}" está cadastrado, mas sem telefone.\n\nInforme o telefone em Cadastros → Colaboradores (ou marque "Sem celular") e depois lance o nome aqui.`);
       return;
     }
   }
