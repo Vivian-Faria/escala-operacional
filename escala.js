@@ -309,7 +309,6 @@ function render() {
   if (estado.modo === 'semana') renderSemana(); else renderMes();
   if (estado.diaAberto) renderDialogo();
   restaurarFoco(foco);
-  atualizarListaColabs();
   atualizarAvisoTelefones();
 
   document.querySelectorAll('.alternador button').forEach((b) => {
@@ -378,7 +377,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
     <div class="parte-nome">
       <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
         placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
-        list="colabsLista" autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+        autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
       ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
     </div>
@@ -412,7 +411,7 @@ function htmlVagaDispensada(iso, t, i, v, travado, rotDia) {
   return `<div class="vaga dispensada">
     <p class="vaga-dispensa">Folga de ${escapeHtml(v.dispensada)} — vaga sobressalente, não conta como furo</p>
     <input type="text" aria-label="Reforço opcional para ${escapeHtml(t.nome)}, ${rotDia}"
-      placeholder="Reforço opcional" list="colabsLista" autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+      placeholder="Reforço opcional" autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
   </div>`;
 }
 
@@ -751,14 +750,58 @@ async function situacaoTelefone(nome) {
   if (faltam && !faltam.length) return 'ok';
   return c ? 'sem-tel' : 'sem-cadastro';
 }
-// lista de sugestões: só colaboradores do hub com ✅
-function atualizarListaColabs() {
-  let dl = document.getElementById('colabsLista');
-  if (!dl) { dl = document.createElement('datalist'); dl.id = 'colabsLista'; document.body.appendChild(dl); }
-  const ok = estado.cfg.colaboradores.filter((c) => telOkLocal(c) && (!c.hubId || c.hubId === estado.hubId));
-  const html = ok.sort(porNome).map((c) => `<option value="${escapeHtml(c.nome)}">✅ ${escapeHtml(c.nome)}</option>`).join('');
-  if (dl.dataset.h !== html) { dl.innerHTML = html; dl.dataset.h = html; }
+// ---- sugestões de colaborador (✅): lista própria, porque o datalist do navegador quase não funciona no celular ----
+const sugBox = document.createElement('div');
+sugBox.id = 'sugColabs'; sugBox.hidden = true; sugBox.setAttribute('role', 'listbox');
+if ('popover' in HTMLElement.prototype) sugBox.setAttribute('popover', 'manual');   // fica por cima até de janelas abertas (dia)
+let sugAlvo = null, sugTimer = 0;
+function fecharSug() {
+  clearTimeout(sugTimer); sugAlvo = null; sugBox.hidden = true;
+  try { if (sugBox.matches(':popover-open')) sugBox.hidePopover(); } catch { /* navegador sem popover */ }
 }
+function posicionarSug() {
+  const input = sugAlvo; if (!input) return;
+  if (!input.isConnected) return fecharSug();
+  const r = input.getBoundingClientRect(), vv = window.visualViewport;
+  const topo = vv ? vv.offsetTop : 0, alto = vv ? vv.height : window.innerHeight;
+  const abaixo = topo + alto - r.bottom - 8, acima = r.top - topo - 8, emBaixo = abaixo >= 150 || abaixo >= acima;
+  const larg = Math.max(r.width, 200);
+  sugBox.style.maxHeight = `${Math.max(120, Math.min(280, emBaixo ? abaixo : acima))}px`;
+  sugBox.style.width = `${larg}px`;
+  sugBox.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - larg - 8))}px`;
+  if (emBaixo) { sugBox.style.top = `${r.bottom + 4}px`; sugBox.style.bottom = 'auto'; }
+  else { sugBox.style.top = 'auto'; sugBox.style.bottom = `${window.innerHeight - r.top + 4}px`; }
+}
+function abrirSug(input) {
+  clearTimeout(sugTimer);
+  if (!input?.isConnected || input.disabled) return fecharSug();
+  const q = normalizaNome(input.value);
+  const lista = estado.cfg.colaboradores
+    .filter((c) => telOkLocal(c) && (!c.hubId || c.hubId === estado.hubId) && (!q || normalizaNome(c.nome).includes(q)))
+    .sort(porNome).slice(0, 40);
+  if (!lista.length) return fecharSug();
+  sugAlvo = input;
+  const pai = input.closest('dialog[open]') || document.body;
+  if (sugBox.parentNode !== pai) pai.appendChild(sugBox);
+  sugBox.innerHTML = lista.map((c) => `<button type="button" role="option" data-nome="${escapeHtml(c.nome)}">✅ ${escapeHtml(c.nome)}</button>`).join('');
+  sugBox.hidden = false;
+  try { if (!sugBox.matches(':popover-open')) sugBox.showPopover(); } catch { /* navegador sem popover */ }
+  posicionarSug();
+}
+document.addEventListener('focusin', (e) => { if (e.target.matches?.('[data-parte]')) abrirSug(e.target); });
+document.addEventListener('input', (e) => { if (e.target.matches?.('[data-parte]')) abrirSug(e.target); });
+document.addEventListener('focusout', (e) => {
+  if (e.target.matches?.('[data-parte]')) { clearTimeout(sugTimer); sugTimer = setTimeout(fecharSug, 400); }
+});
+sugBox.addEventListener('mousedown', (e) => e.preventDefault());   // tocar na lista não tira o foco do campo
+sugBox.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-nome]'); if (!b || !sugAlvo) return;
+  const i = sugAlvo; i.value = b.dataset.nome; fecharSug();
+  i.dispatchEvent(new Event('change', { bubbles: true })); i.blur();
+});
+window.addEventListener('resize', posicionarSug);
+window.visualViewport?.addEventListener('resize', posicionarSug);
+window.addEventListener('scroll', (e) => { if (e.target !== sugBox && !sugBox.contains(e.target)) posicionarSug(); }, true);
 
 // aviso fixo: colaboradores já escalados (de hoje em diante) neste hub que estão sem cadastro ou sem telefone
 async function atualizarAvisoTelefones() {
