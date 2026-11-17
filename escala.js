@@ -796,7 +796,12 @@ document.addEventListener('focusout', (e) => {
 sugBox.addEventListener('mousedown', (e) => e.preventDefault());   // tocar na lista não tira o foco do campo
 sugBox.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-nome]'); if (!b || !sugAlvo) return;
-  const i = sugAlvo; i.value = b.dataset.nome; fecharSug();
+  const i = sugAlvo, nome = b.dataset.nome; fecharSug();
+  // toque na lista é fácil de errar no celular: pede confirmação antes de lançar o nome
+  const [iso, turnoId, idx, pi] = i.dataset.parte.split('|');
+  const atual = (partesAtuais(iso, turnoId, Number(idx))[Number(pi)] || {}).nome || '';
+  if (nome !== atual && !confirm(atual ? `Trocar "${atual}" por "${nome}"?` : `Lançar "${nome}" nesta vaga?`)) { i.value = atual; i.blur(); return; }
+  i.value = nome;
   i.dispatchEvent(new Event('change', { bubbles: true })); i.blur();
 });
 window.addEventListener('resize', posicionarSug);
