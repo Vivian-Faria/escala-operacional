@@ -125,6 +125,11 @@
       if (!it || it.desabilitada) return;
       if (select.value !== it.valor) {
         select.value = it.valor;
+        // Um <select> nativo dispara "input" e depois "change" ao escolher
+        // uma opção — algumas telas (os cadastros) só ouvem "input" pra
+        // saber que algo mudou e mostrar a barra de salvar, então os dois
+        // precisam sair daqui pra continuar funcionando como antes.
+        select.dispatchEvent(new Event('input', { bubbles: true }));
         select.dispatchEvent(new Event('change', { bubbles: true }));
       }
       sincronizarRotulo();
