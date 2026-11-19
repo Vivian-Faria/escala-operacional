@@ -1,7 +1,7 @@
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
 import {
   configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,
-  alternarConfirmacao, marcarComparecimento, removerComparecimento
+  alternarConfirmacao, marcarComparecimento, removerComparecimento, ouvirAprovacoes
 } from './db.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
@@ -52,7 +52,8 @@ const estado = {
   chaveFaixa: '',
   diaAberto: null,   // dia aberto na janela (visão mensal)
   diaSel: null,      // dia mostrado no celular (visão semanal)
-  lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false }
+  lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false },
+  aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: ''
 };
 
 function mostrarAviso(titulo, texto) {
@@ -101,6 +102,20 @@ function assinarEscalas() {
   }, erroLeitura);
 }
 
+// Semanas validadas (por hub): só avisos de quantidade somem, nada é travado.
+function assinarAprovacoes() {
+  if (estado.hubId === estado.hubAprovacoes) return;
+  estado.hubAprovacoes = estado.hubId;
+  estado.cancelarAprovacoes?.();
+  estado.aprovacoes = {};
+  if (!estado.hubId) { estado.cancelarAprovacoes = null; return; }
+  estado.cancelarAprovacoes = ouvirAprovacoes(estado.hubId, (semanas) => {
+    estado.aprovacoes = semanas;
+    render();
+  }, () => { /* sem aprovação carregada, os avisos continuam aparecendo normalmente */ });
+}
+const semanaAprovada = (iso) => Boolean(estado.aprovacoes[isoDate(startOfWeek(parseIso(iso)))]);
+
 const hojeIso = () => isoDate(new Date());
 const docDia = (iso, hubId = estado.hubId) => estado.escalas[`${hubId}_${iso}`];
 const vagasNoDia = (t, dow) => Number(t.vagas?.[dow]) || 0;
@@ -113,19 +128,29 @@ const supervisoresSobressalentes = () => new Set(
   estado.cfg.colaboradores.filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
 );
 
+// Quem faltou/compareceu/confirmou num turno naquele dia — usado tanto para
+// montar as vagas cadastradas (situacaoVagas) quanto as extras lançadas além
+// da quantidade configurada.
+function marcasDoTurno(iso, turnoId) {
+  const faltas = new Set(listaDoTurno(iso, 'faltas', turnoId).map(normalizaNome));
+  const compareceram = new Set(listaDoTurno(iso, 'compareceram', turnoId).map(normalizaNome));
+  const confirmacoes = new Set(listaDoTurno(iso, 'confirmacoes', turnoId).map(normalizaNome));
+  const faltou = (nome) => faltas.has(normalizaNome(nome));
+  return {
+    faltou,
+    marcas: {
+      compareceu: (nome) => (faltou(nome) ? 'nao' : (compareceram.has(normalizaNome(nome)) ? 'sim' : '')),
+      confirmou: (nome) => confirmacoes.has(normalizaNome(nome))
+    }
+  };
+}
+
 // Situação de cada vaga cadastrada de um turno naquele dia.
 // A vaga pode ter uma pessoa no turno inteiro ou várias em horários quebrados.
 // Quem faltou deixa o seu trecho em aberto.
 function situacaoVagas(iso, t, dow) {
   const salvas = vagasSalvas(iso, t.id);
-  const faltas = new Set(listaDoTurno(iso, 'faltas', t.id).map(normalizaNome));
-  const compareceram = new Set(listaDoTurno(iso, 'compareceram', t.id).map(normalizaNome));
-  const confirmacoes = new Set(listaDoTurno(iso, 'confirmacoes', t.id).map(normalizaNome));
-  const faltou = (nome) => faltas.has(normalizaNome(nome));
-  const marcas = {
-    compareceu: (nome) => (faltou(nome) ? 'nao' : (compareceram.has(normalizaNome(nome)) ? 'sim' : '')),
-    confirmou: (nome) => confirmacoes.has(normalizaNome(nome))
-  };
+  const { faltou, marcas } = marcasDoTurno(iso, t.id);
   const vagas = Array.from({ length: vagasNoDia(t, dow) }, (_, i) => montarVaga(t, salvas[i] || [], faltou, marcas));
 
   // Vaga vazia + folga de um supervisor sobressalente naquele turno = não é furo.
@@ -304,6 +329,7 @@ function render() {
   }
   el.aviso.hidden = true;
   el.painel.hidden = false;
+  assinarAprovacoes();
 
   const foco = capturarFoco();
   if (estado.modo === 'semana') renderSemana(); else renderMes();
@@ -339,7 +365,7 @@ function htmlContDia(c) {
   return `${fracao}<span class="selo selo-furo">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
 }
 
-function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
+function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras, extra) {
   const chave = `${iso}|${t.id}|${i}|${pi}`;
   const temNome = Boolean(p.nome.trim());
   const dis = travado ? 'disabled' : '';
@@ -376,7 +402,7 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
   return `<div class="parte${p.faltou ? ' faltou' : ''}${tudoOk ? ' ok' : ''}">
     <div class="parte-nome">
       <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
-        placeholder="${mostrarHoras ? 'Quem cobre' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
+        placeholder="${mostrarHoras ? 'Quem cobre' : (extra ? 'Pessoa extra' : 'Descoberta')}" aria-label="${escapeHtml(rotulo)}"
         autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
       ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
         aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
@@ -388,13 +414,14 @@ function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras) {
   </div>`;
 }
 
-function htmlVaga(iso, t, i, v, ind, travado, rotDia) {
+function htmlVaga(iso, t, i, v, ind, travado, rotDia, extra) {
   const dis = travado ? 'disabled' : '';
   if (v.dispensada) return htmlVagaDispensada(iso, t, i, v, travado, rotDia);
-  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : ''].filter(Boolean).join(' ');
+  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : '', extra ? 'extra-nova' : '']
+    .filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
   const corpo = partes.map((p, pi) =>
-    htmlParte(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, v.dividida)).join('');
+    htmlParte(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, v.dividida, extra)).join('');
   const buracos = v.dividida && v.buracos.length && v.partes.some((p) => p.nome)
     ? `<p class="vaga-buraco">Falta cobrir ${v.buracos.map(textoBuraco).join(' e ')}</p>` : '';
   const rodape = v.dividida
@@ -444,6 +471,28 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
   </div>`;
 }
 
+// Selo + aviso do cabeçalho do turno: quantas pessoas foram lançadas contra
+// a quantidade configurada. Não trava nada — é só um alerta. "necessarias"
+// já desconta vagas dispensadas por folga de supervisor.
+function htmlContTurno(necessarias, lancadas) {
+  if (!necessarias) {
+    return lancadas
+      ? { badge: `<span class="turno-cont">${plural(lancadas, 'pessoa', 'pessoas')}</span>`, aviso: '' }
+      : { badge: '', aviso: '' };
+  }
+  if (lancadas === necessarias) return { badge: `<span class="turno-cont completo">${lancadas}/${necessarias}</span>`, aviso: '' };
+  if (lancadas < necessarias) {
+    return {
+      badge: `<span class="turno-cont incompleto">${lancadas}/${necessarias}</span>`,
+      aviso: `Pode estar faltando ${plural(necessarias - lancadas, 'pessoa', 'pessoas')}`
+    };
+  }
+  return {
+    badge: `<span class="turno-cont sobra">${lancadas}/${necessarias}</span>`,
+    aviso: `Pode estar sobrando ${plural(lancadas - necessarias, 'pessoa', 'pessoas')}`
+  };
+}
+
 function htmlDia(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
@@ -457,17 +506,29 @@ function htmlDia(d) {
     const n = vagasNoDia(t, dow);
     const situacao = situacaoVagas(iso, t, dow);
     const aplicaveis = situacao.filter((v) => !v.dispensada);
-    const cobertas = aplicaveis.filter((v) => v.coberta).length;
-    const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('');
-    const extras = vagasSalvas(iso, t.id).map((partes, i) => ({ partes, i })).slice(n).filter((x) => x.partes.length);
-    const htmlExtras = extras.length ? `<div class="extras">
-      <p>Acima das vagas cadastradas</p>
-      ${extras.map((x) => `<div class="extra"><span>${escapeHtml(x.partes.map((p) => p.nome).join(', '))}</span>
-        <button type="button" class="btn-texto" data-liberar="${iso}|${t.id}|${x.i}">Remover</button></div>`).join('')}
-    </div>` : '';
-    const cont = aplicaveis.length
-      ? `<span class="turno-cont ${cobertas >= aplicaveis.length ? 'completo' : 'incompleto'}">${cobertas}/${aplicaveis.length}</span>`
-      : n ? '<span class="turno-cont completo">Dispensado</span>' : '';
+    const necessarias = aplicaveis.length;
+
+    // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
+    // configurado. As vagas extras (índice >= n) aparecem como vagas normais,
+    // e sempre sobra uma em branco no fim para quem quiser lançar mais uma.
+    const salvas = vagasSalvas(iso, t.id);
+    const { faltou, marcas } = marcasDoTurno(iso, t.id);
+    const extrasFim = Math.max(n, salvas.length) + 1;
+    const extras = [];
+    for (let i = n; i < extrasFim; i++) extras.push({ i, v: montarVaga(t, salvas[i] || [], faltou, marcas) });
+
+    const pessoasDe = (v) => v.partes.filter((p) => p.nome).length;
+    const lancadas = aplicaveis.reduce((s, v) => s + pessoasDe(v), 0) + extras.reduce((s, x) => s + pessoasDe(x.v), 0);
+
+    const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('')
+      + extras.map((x) => htmlVaga(iso, t, x.i, x.v, ind, travado, rotDia, true)).join('');
+
+    const { badge: cont, aviso: avisoBruto } = necessarias === 0 && n > 0 && lancadas === 0
+      ? { badge: '<span class="turno-cont completo">Dispensado</span>', aviso: '' }
+      : htmlContTurno(necessarias, lancadas);
+    // Semana já validada: o selo continua mostrando a conta, mas o aviso
+    // de "pode estar faltando/sobrando" some — alguém já revisou isso.
+    const aviso = semanaAprovada(iso) ? '' : avisoBruto;
 
     return `<section class="turno faixa-${faixaDoDia(t.inicio)}">
       <header class="turno-cab">
@@ -475,8 +536,8 @@ function htmlDia(d) {
         <span class="turno-hora">${t.inicio}–${t.fim}</span>
         ${cont}
       </header>
+      ${aviso ? `<p class="turno-aviso ${lancadas < necessarias ? 'falta' : 'sobra'}">${escapeHtml(aviso)}</p>` : ''}
       <div class="vagas">${htmlVagas}</div>
-      ${htmlExtras}
       ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
   }).join('');
@@ -529,6 +590,8 @@ function renderSemana() {
   const { ini, fim } = faixaPeriodo();
   const hoje = hojeIso();
   const tot = totalZerado();
+  const bannerAprovada = semanaAprovada(isoDate(ini))
+    ? ' <span class="pilula pilula-aprovada">✓ Semana validada</span>' : '';
   const dias = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(ini, i);
     const iso = isoDate(d);
@@ -586,7 +649,7 @@ function renderSemana() {
       </article>`).join('');
   }
   el.titulo.textContent = tituloSemana(ini, fim);
-  el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim));
+  el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim)) + bannerAprovada;
 }
 
 // Quem está escalado em cada turno, para a visão mensal.
@@ -687,6 +750,7 @@ function renderDialogo() {
   el.dlgTitulo.textContent = `${DIAS_LONGO[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
   el.dlgCorpo.innerHTML = `${htmlMarcos(marcos)}
     ${c.total ? `<p class="dlg-resumo">${htmlContDia(c)}</p>` : ''}
+    ${semanaAprovada(estado.diaAberto) ? '<p class="dlg-aprovada"><span class="pilula pilula-aprovada">✓ Semana validada</span></p>' : ''}
     ${htmlDia(d)}`;
 }
 
@@ -1034,9 +1098,6 @@ document.addEventListener('click', (e) => {
     const [campo, iso, turnoId] = ds.removerAus.split('|');
     gravar(() => removerAusencia(estado.hubId, iso, turnoId, ds.nome, campo, nomeSupervisor()),
       campo === 'folgas' ? 'Folga retirada' : 'Falta retirada');
-  } else if (ds.liberar) {
-    const [iso, turnoId, idx] = ds.liberar.split('|');
-    gravarPartes(iso, turnoId, Number(idx), [], 'Removido');
   } else if (ds.dia) {
     estado.diaSel = ds.dia;
     render();

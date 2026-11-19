@@ -3,7 +3,7 @@
 //   escalas/{hubId}_{AAAA-MM-DD} → quem está em cada vaga (fixo ou freelancer), folgas e faltas do dia
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  getFirestore, doc, getDoc, getDocs, setDoc, onSnapshot, collection, query, where, serverTimestamp,
+  getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp,
   arrayUnion, arrayRemove, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -178,4 +178,33 @@ export async function salvarVagasEmLote(escritas) {
     }, { merge: true });
   }
   await batch.commit();
+}
+
+// ================= validação da escala por semana =================
+// aprovacoes/{hubId}_{isoSemana} (isoSemana = domingo da semana, AAAA-MM-DD)
+// marca que alguém revisou e aprovou os lançamentos daquele hub naquela
+// semana. É só um registro — não trava nem apaga nada da escala.
+const refAprovacao = (hubId, isoSemana) => doc(obterDb(), 'aprovacoes', `${hubId}_${isoSemana}`);
+
+// Escuta todas as aprovações de um hub (poucas linhas, cabe escutar tudo).
+export function ouvirAprovacoes(hubId, aoReceber, aoErrar) {
+  const q = query(collection(obterDb(), 'aprovacoes'), where('hubId', '==', hubId));
+  return onSnapshot(q, (snap) => {
+    const semanas = {};
+    snap.forEach((d) => { semanas[d.data().semana] = d.data(); });
+    aoReceber(semanas);
+  }, aoErrar);
+}
+
+export async function aprovarSemana(hubId, isoSemana, aprovadoPor) {
+  await setDoc(refAprovacao(hubId, isoSemana), {
+    hubId,
+    semana: isoSemana,
+    aprovadoPor,
+    aprovadoEm: serverTimestamp()
+  });
+}
+
+export async function reabrirSemana(hubId, isoSemana) {
+  await deleteDoc(refAprovacao(hubId, isoSemana));
 }

@@ -255,6 +255,7 @@ select:focus-visible {
 .pilula-furo { background: var(--furo); border-color: var(--furo); color: var(--texto-contraste); font-weight: 700; }
 .pilula-falta { background: var(--furo-fundo); border-color: var(--furo); color: var(--furo-texto); font-weight: 650; }
 .pilula-pendente { border-style: dashed; border-color: var(--grafite); }
+.pilula-aprovada { background: var(--acento); border-color: var(--acento); color: var(--texto-contraste); font-weight: 700; }
 
 .alternador { display: inline-flex; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); overflow: hidden; }
 .alternador button { border: 0; background: var(--superficie); padding: 8px 16px; min-height: 38px; }
@@ -320,6 +321,12 @@ select:focus-visible {
 .turno-cont { margin-left: auto; font-size: 12.5px; font-weight: 750; }
 .turno-cont.completo { color: var(--ok); }
 .turno-cont.incompleto { color: var(--furo); }
+.turno-cont.sobra { color: var(--grafite); }
+
+/* Aviso de quantidade (sem travar nada, só um alerta) */
+.turno-aviso { margin: -2px 0 4px; font-size: 12px; font-weight: 600; }
+.turno-aviso.falta { color: var(--furo-texto); }
+.turno-aviso.sobra { color: var(--grafite); }
 
 /* ---------- vagas ----------
    Cada vaga vira um cartão com borda e fundo próprios — assim, numa coluna
@@ -441,9 +448,13 @@ select:focus-visible {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.extras { margin-top: 6px; font-size: 13px; }
-.extras p { margin: 0 0 2px; color: var(--conflito); font-size: 12px; }
-.extra { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+/* Vaga extra (além da quantidade configurada): mesmo cartão, só com um
+   contorno pontilhado pra avisar que é gente lançada por cima do combinado. */
+.vaga.extra-nova { border-style: dashed; }
+.vaga.extra-nova.descoberta { border-color: var(--linha-forte); background: var(--superficie); }
+.vaga.extra-nova.descoberta .parte-nome input[type=text] {
+  background-color: var(--superficie); border: 1px dashed var(--linha-forte); color: inherit; font-weight: 500;
+}
 
 /* ---------- folgas e faltas ---------- */
 .ausencias { margin-top: 8px; padding-top: 8px; border-top: 1px dotted var(--linha-forte); }
@@ -584,6 +595,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .dlg-corpo { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
 .dlg-corpo .marcos { margin: 0; }
 .dlg-resumo { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.dlg-aprovada { margin: 0 0 4px; }
 
 /* ---------- faixa de dias (celular) ---------- */
 .faixa-dias {
@@ -906,6 +918,15 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .barra-periodo .nav-periodo h3 { margin: 0 8px; font-size: 17px; font-weight: 700; }
 .barra-periodo .barra-dir { display: flex; align-items: center; gap: 12px; }
 .barra-periodo .alternador button { padding: 6px 14px; min-height: 34px; font-size: 13.5px; }
+
+.validacao-semana {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin-bottom: 16px; padding: 10px 14px; border-radius: var(--raio-m);
+  background: var(--papel); border: 1px solid var(--linha-forte);
+}
+.validacao-semana p { margin: 0; font-size: 13px; color: var(--grafite); max-width: 54ch; }
+.validacao-semana.aprovada { border-color: var(--acento); background: rgba(186, 242, 106, .08); }
+.validacao-semana.aprovada p { color: var(--tinta); }
 
 /* ---------- telefone do colaborador: caixa de vidro, número em verde ---------- */
 input[type=tel] {

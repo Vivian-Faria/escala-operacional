@@ -25,5 +25,13 @@ service cloud.firestore {
         && request.resource.data.hubId is string;
       allow delete: if ehAdmin();
     }
+
+    // Validação semanal da escala por hub: todos leem (pra esconder os
+    // avisos de quantidade na tela de lançamento), só o administrador
+    // aprova ou reabre uma semana.
+    match /aprovacoes/{docId} {
+      allow read: if true;
+      allow write: if ehAdmin();
+    }
   }
 }
