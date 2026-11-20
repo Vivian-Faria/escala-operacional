@@ -166,13 +166,21 @@ export function hhmm(min) {
 }
 
 // Minutos que uma parte cobre, sempre dentro da janela do turno.
-// Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520.
+// Trata turno que vira a noite: 18:00–01:20 vale 1080 a 1520. Chegar antes do
+// horário do turno (ex: turno às 18:00, pessoa lançada às 16:20) é só cobrir
+// a vaga com folga — nunca conta como virada de dia.
 export function trechoDaParte(parte, tIni, tFim) {
   if (!parte.inicio && !parte.fim) return [tIni, tFim];
   let a = parte.inicio ? toMin(parte.inicio) : tIni;
   let b = parte.fim ? toMin(parte.fim) : tFim;
-  while (a < tIni) a += 1440;
-  while (b <= a) b += 1440;
+  if (tFim > 1440) {
+    // Turno vira a noite: horário de madrugada lançado é o dia seguinte.
+    while (a < tIni) a += 1440;
+    while (b <= a) b += 1440;
+  } else if (b <= a) {
+    // A própria pessoa que atravessa a meia-noite, mesmo o turno não virando.
+    b += 1440;
+  }
   return [Math.max(a, tIni), Math.min(b, tFim)];
 }
 
