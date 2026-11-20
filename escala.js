@@ -19,7 +19,8 @@ const el = {
   dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
   lembrete: $('#lembrete'),
   btnAdmin: $('#btnAdmin'), dlgAdmin: $('#dlgAdmin'), formAdmin: $('#formAdmin'),
-  senhaAdmin: $('#senhaAdmin'), erroAdmin: $('#erroAdmin')
+  senhaAdmin: $('#senhaAdmin'), erroAdmin: $('#erroAdmin'),
+  status: $('#status')
 };
 const mostrarStatus = criarStatus($('#status'));
 
@@ -539,7 +540,7 @@ function htmlDia(d) {
         ${cont}
       </header>
       ${aviso ? `<p class="turno-aviso">${escapeHtml(aviso)}${status === 'pendente' && estado.souAdmin
-        ? ` <button type="button" class="btn-texto" data-aprovar="${iso}|${t.id}">Aprovar</button>` : ''}</p>` : ''}
+        ? ` <button type="button" class="btn-aprovar" data-aprovar="${iso}|${t.id}">Aprovar</button>` : ''}</p>` : ''}
       <div class="vagas">${htmlVagas}</div>
       ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
@@ -771,6 +772,10 @@ function abrirDia(iso) {
   estado.diaAberto = iso;
   renderDialogo();
   if (!el.dlg.open) el.dlg.showModal();
+  // <dialog> em modo modal fica numa camada acima de tudo que não está
+  // dentro dele — o aviso de "Salvando…"/erro ficava escondido atrás da
+  // janela. Movendo o próprio elemento pra dentro do diálogo, ele aparece.
+  el.dlg.appendChild(el.status);
 }
 
 function renderDialogo() {
@@ -1032,7 +1037,7 @@ $('#btnHoje').addEventListener('click', () => {
 TELA_COMPACTA.addEventListener('change', () => render());
 
 $('#dlgFechar').addEventListener('click', () => el.dlg.close());
-el.dlg.addEventListener('close', () => { estado.diaAberto = null; });
+el.dlg.addEventListener('close', () => { estado.diaAberto = null; document.body.appendChild(el.status); });
 
 // ================= login da administradora (pra aprovar lançamentos aqui mesmo) =================
 function mensagemLoginAdmin(codigo) {
