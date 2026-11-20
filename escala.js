@@ -380,32 +380,41 @@ function htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra) {
   const dis = travado ? 'disabled' : '';
   const temNome = Boolean(p.nome.trim());
   const rotulo = `${t.nome}, vaga ${i + 1}, ${rotDia}`;
-  const quem = escapeHtml(p.nome) || (extra ? 'Pessoa extra' : 'Vaga livre');
-  const inicio = p.inicio || t.inicio, fim = p.fim || t.fim;
+  const quem = escapeHtml(p.nome) || 'pessoa';
+  // Hora sem sugestão: só mostra/pré-preenche quando alguém já digitou algo.
+  // Pra quem tem nome mas não mexeu no horário, assume o turno inteiro (sem
+  // forçar isso visualmente na hora de editar).
+  const inicio = p.inicio || (temNome ? t.inicio : ''), fim = p.fim || (temNome ? t.fim : '');
 
   if (estado.editandoParte !== chave) {
-    return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}${temNome ? '' : ' vazia'}">
+    if (!temNome) {
+      return `<div class="linha-vaga vazia">
+        <span class="lv-texto lv-nova">+ Adicionar pessoa</span>
+        <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Lançar nova pessoa, ${escapeHtml(rotulo)}" ${dis}>✎</button>
+      </div>`;
+    }
+    return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}">
       <span class="lv-texto">${quem} <span class="lv-hora">${inicio} às ${fim}</span></span>
       <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Editar ${escapeHtml(rotulo)}" ${dis}>✎</button>
-      ${temNome ? `<button type="button" class="btn-icone perigo" data-excluir="${chave}"
-        aria-label="Excluir ${escapeHtml(p.nome)} desta vaga" ${dis}>×</button>` : ''}
+      <button type="button" class="btn-icone perigo" data-excluir="${chave}"
+        aria-label="Excluir ${escapeHtml(p.nome)} desta vaga" ${dis}>×</button>
       ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
     </div>`;
   }
   return `<div class="linha-vaga editando">
     <div class="parte-nome">
       <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
-        placeholder="${extra ? 'Pessoa extra' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
+        placeholder="${extra ? 'Pessoa extra' : 'Nome'}" aria-label="${escapeHtml(rotulo)}"
         autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
     </div>
     <div class="horas">
       <label class="hora"><span>Entra</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${inicio}" aria-label="Entrada de ${quem}"
+          class="campo-hora" value="${p.inicio}" aria-label="Entrada de ${quem}"
           data-hora="${chave}|inicio" data-foco="hi|${chave}" ${dis}></label>
       <label class="hora"><span>Sai</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${fim}" aria-label="Saída de ${quem}"
+          class="campo-hora" value="${p.fim}" aria-label="Saída de ${quem}"
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
       <button type="button" class="btn-icone" data-concluir="${chave}" aria-label="Concluir edição">✓</button>
     </div>
@@ -413,7 +422,7 @@ function htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra) {
   </div>`;
 }
 
-function htmlVaga(iso, t, i, v, ind, travado, rotDia, extra) {
+function htmlVaga(iso, t, i, v, travado, rotDia, extra) {
   if (v.dispensada) return htmlVagaDispensada(iso, t, i, v, travado, rotDia);
   const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', extra ? 'extra-nova' : ''].filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
@@ -477,19 +486,25 @@ function contagemTurnoDia(iso, dow, t) {
   const necessarias = aplicaveis.length;
 
   // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
-  // configurado. As vagas extras (índice >= n) aparecem como vagas normais,
-  // e sempre sobra uma em branco no fim para quem quiser lançar mais uma.
+  // configurado, sem sugestão de horário pronta. A lista mostra só quem tem
+  // nome lançado (e as vagas dispensadas, que avisam o crédito de folga) —
+  // nada de linha vazia "fantasma" pra cada vaga ainda não preenchida.
+  // Sempre sobra uma linha em branco no fim pra lançar mais uma pessoa.
   const salvas = vagasSalvas(iso, t.id);
   const { faltou, marcas } = marcasDoTurno(iso, t.id);
   const extrasFim = Math.max(n, salvas.length) + 1;
-  const extras = [];
-  for (let i = n; i < extrasFim; i++) extras.push({ i, v: montarVaga(t, salvas[i] || [], faltou, marcas) });
+  const linhas = [];
+  for (let i = 0; i < extrasFim; i++) {
+    const v = i < n ? situacao[i] : montarVaga(t, salvas[i] || [], faltou, marcas);
+    if (v.dispensada || v.partes.some((p) => p.nome)) linhas.push({ i, v });
+  }
+  linhas.push({ i: extrasFim, v: montarVaga(t, [], faltou, marcas) });
 
   const pessoasDe = (v) => v.partes.filter((p) => p.nome).length;
-  const lancadas = aplicaveis.reduce((s, v) => s + pessoasDe(v), 0) + extras.reduce((s, x) => s + pessoasDe(x.v), 0);
+  const lancadas = linhas.reduce((s, x) => s + (x.v.dispensada ? 0 : pessoasDe(x.v)), 0);
   const dispensado = necessarias === 0 && n > 0 && lancadas === 0;
 
-  return { t, n, situacao, extras, necessarias, lancadas, dispensado };
+  return { t, n, linhas, necessarias, lancadas, dispensado };
 }
 
 // Estado de um turno num dia: "completo" (bateu a conta, ou a diferença já
@@ -527,11 +542,10 @@ function htmlDia(d) {
 
   return turnos.map((t) => {
     const info = contagemTurnoDia(iso, dow, t);
-    const { situacao, extras } = info;
+    const { linhas } = info;
     const { badge: cont, aviso, status } = htmlContTurno(info, turnoAprovado(iso, t.id));
 
-    const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('')
-      + extras.map((x) => htmlVaga(iso, t, x.i, x.v, ind, travado, rotDia, true)).join('');
+    const htmlVagas = linhas.map((x) => htmlVaga(iso, t, x.i, x.v, travado, rotDia, x.i >= info.n)).join('');
 
     return `<section class="turno faixa-${faixaDoDia(t.inicio)}${status === 'pendente' ? ' turno-pendente' : ''}">
       <header class="turno-cab">
