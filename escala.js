@@ -386,6 +386,8 @@ function htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra) {
     return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}${temNome ? '' : ' vazia'}">
       <span class="lv-texto">${quem} <span class="lv-hora">${inicio} às ${fim}</span></span>
       <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Editar ${escapeHtml(rotulo)}" ${dis}>✎</button>
+      ${temNome ? `<button type="button" class="btn-icone perigo" data-excluir="${chave}"
+        aria-label="Excluir ${escapeHtml(p.nome)} desta vaga" ${dis}>×</button>` : ''}
       ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
     </div>`;
   }
@@ -824,6 +826,11 @@ function alterarParte(iso, turnoId, idx, pi, mudanca, msgOk) {
   return gravarPartes(iso, turnoId, idx, partes, msgOk);
 }
 
+// Esvazia a vaga (tira a pessoa daquele card, libera o horário de novo)
+function excluirVaga(iso, turnoId, idx, pi) {
+  alterarParte(iso, turnoId, idx, pi, { nome: '', tipo: '', inicio: '', fim: '' }, 'Vaga removida');
+}
+
 // ---- cadastro de colaboradores: só quem está cadastrado e com telefone (✅) pode ser lançado ----
 const colabDe = (nome) => {
   const n = normalizaNome(nome);
@@ -1107,6 +1114,9 @@ document.addEventListener('click', (e) => {
   } else if (ds.concluir) {
     estado.editandoParte = null;
     render();
+  } else if (ds.excluir) {
+    const [iso, turnoId, idx, pi] = ds.excluir.split('|');
+    excluirVaga(iso, turnoId, Number(idx), Number(pi));
   } else if (ds.aprovar) {
     const [iso, turnoId] = ds.aprovar.split('|');
     gravar(() => aprovarLancamento(estado.hubId, iso, turnoId, estado.emailAdmin || 'admin'), 'Lançamento aprovado');
