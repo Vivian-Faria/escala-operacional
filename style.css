@@ -262,14 +262,47 @@ select:focus-visible {
 .alternador button + button { border-left: 1px solid var(--linha-forte); }
 .alternador button[aria-pressed="true"] { background: var(--acento); color: var(--texto-contraste); }
 
-/* ---------- semana (computador): 7 colunas que cabem na largura da tela ---------- */
-.quadro-semana {
+/* ---------- semana (computador): grade de cartões, clique abre o dia ---------- */
+.quadro-semana-cartoes {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: 108px repeat(7, minmax(0, 1fr));
+  gap: 6px;
   background: var(--superficie);
   border: 1px solid var(--linha);
   border-radius: var(--raio-m);
+  padding: 10px;
 }
+.cs-linha { display: contents; }
+.cs-rotulo { display: flex; flex-direction: column; justify-content: center; padding: 6px 4px; min-width: 0; }
+.cs-rotulo-nome { font-weight: 700; font-size: 13px; }
+.cs-rotulo-hora { color: var(--grafite); font-size: 11px; }
+.cs-dia-cab {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px;
+  border: 0; background: transparent; border-radius: var(--raio-p); cursor: pointer;
+}
+.cs-dia-cab.hoje { background: rgba(186, 242, 106, .12); }
+.cs-dia-sem { color: var(--grafite); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.cs-dia-num { font-weight: 800; font-size: 18px; }
+
+.cartao-turno {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid var(--linha); border-radius: var(--raio-p); background: var(--papel);
+  padding: 10px 4px 9px; min-height: 64px; position: relative; overflow: hidden; cursor: pointer;
+}
+.ct-num { font-weight: 800; font-size: 20px; line-height: 1; }
+.ct-texto { font-size: 10.5px; color: var(--grafite); text-align: center; }
+.ct-barra { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--grafite); opacity: .25; }
+.cartao-turno.completo .ct-num { color: var(--ok); }
+.cartao-turno.completo .ct-barra { background: var(--ok); opacity: 1; }
+.cartao-turno.pendente { border-color: var(--furo); }
+.cartao-turno.pendente .ct-num, .cartao-turno.pendente .ct-texto { color: var(--furo-texto); }
+.cartao-turno.pendente .ct-barra { background: var(--furo); opacity: 1; }
+.cartao-turno.neutro .ct-num { color: var(--grafite); font-size: 15px; }
+
+/* ---------- semana (celular): pilha de cartões do dia selecionado ---------- */
+.cartoes-turno-pilha { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.cartoes-turno-pilha .cartao-turno { flex: 1 1 100px; min-width: 100px; }
+.btn-lancar { width: 100%; margin-top: 4px; }
 .dia { border-right: 1px solid var(--linha); min-width: 0; display: flex; flex-direction: column; }
 .dia:last-child { border-right: 0; }
 
@@ -320,13 +353,11 @@ select:focus-visible {
 .turno-hora { color: var(--grafite); font-size: 12px; }
 .turno-cont { margin-left: auto; font-size: 12.5px; font-weight: 750; }
 .turno-cont.completo { color: var(--ok); }
-.turno-cont.incompleto { color: var(--furo); }
-.turno-cont.sobra { color: var(--grafite); }
+.turno-cont.pendente { color: var(--furo); }
 
-/* Aviso de quantidade (sem travar nada, só um alerta) */
-.turno-aviso { margin: -2px 0 4px; font-size: 12px; font-weight: 600; }
-.turno-aviso.falta { color: var(--furo-texto); }
-.turno-aviso.sobra { color: var(--grafite); }
+/* Aviso de quantidade (sem travar nada, só um alerta até Ví aprovar) */
+.turno-aviso { margin: -2px 0 4px; font-size: 12px; font-weight: 600; color: var(--furo-texto); }
+.turno.turno-pendente { border-color: var(--furo); }
 
 /* ---------- vagas ----------
    Cada vaga vira um cartão com borda e fundo próprios — assim, numa coluna
@@ -595,7 +626,6 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .dlg-corpo { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
 .dlg-corpo .marcos { margin: 0; }
 .dlg-resumo { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 14px; }
-.dlg-aprovada { margin: 0 0 4px; }
 
 /* ---------- faixa de dias (celular) ---------- */
 .faixa-dias {
@@ -927,6 +957,15 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .validacao-semana p { margin: 0; font-size: 13px; color: var(--grafite); max-width: 54ch; }
 .validacao-semana.aprovada { border-color: var(--acento); background: rgba(186, 242, 106, .08); }
 .validacao-semana.aprovada p { color: var(--tinta); }
+
+.pendencias { margin-bottom: 16px; border: 1px solid var(--furo); border-radius: var(--raio-m); overflow: hidden; }
+.pendencias-titulo { margin: 0; padding: 10px 14px; background: var(--furo-fundo); color: var(--furo-texto); font-weight: 700; font-size: 13.5px; }
+.pendencia {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 10px 14px; border-top: 1px solid var(--linha);
+}
+.pendencia-info { font-size: 13.5px; color: var(--tinta); }
+.pendencia-conta { font-weight: 750; color: var(--furo); }
 
 /* ---------- telefone do colaborador: caixa de vidro, número em verde ---------- */
 input[type=tel] {

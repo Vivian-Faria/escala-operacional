@@ -102,19 +102,20 @@ function assinarEscalas() {
   }, erroLeitura);
 }
 
-// Semanas validadas (por hub): só avisos de quantidade somem, nada é travado.
+// Lançamentos aprovados por Ví (por hub, por dia+turno): só avisos de
+// quantidade somem, nada é travado.
 function assinarAprovacoes() {
   if (estado.hubId === estado.hubAprovacoes) return;
   estado.hubAprovacoes = estado.hubId;
   estado.cancelarAprovacoes?.();
   estado.aprovacoes = {};
   if (!estado.hubId) { estado.cancelarAprovacoes = null; return; }
-  estado.cancelarAprovacoes = ouvirAprovacoes(estado.hubId, (semanas) => {
-    estado.aprovacoes = semanas;
+  estado.cancelarAprovacoes = ouvirAprovacoes(estado.hubId, (aprovacoes) => {
+    estado.aprovacoes = aprovacoes;
     render();
   }, () => { /* sem aprovação carregada, os avisos continuam aparecendo normalmente */ });
 }
-const semanaAprovada = (iso) => Boolean(estado.aprovacoes[isoDate(startOfWeek(parseIso(iso)))]);
+const turnoAprovado = (iso, turnoId) => Boolean(estado.aprovacoes[`${iso}_${turnoId}`]);
 
 const hojeIso = () => isoDate(new Date());
 const docDia = (iso, hubId = estado.hubId) => estado.escalas[`${hubId}_${iso}`];
@@ -474,23 +475,54 @@ function htmlAusencias(iso, t, ind, travado, rotDia) {
 // Selo + aviso do cabeçalho do turno: quantas pessoas foram lançadas contra
 // a quantidade configurada. Não trava nada — é só um alerta. "necessarias"
 // já desconta vagas dispensadas por folga de supervisor.
-function htmlContTurno(necessarias, lancadas) {
-  if (!necessarias) {
-    return lancadas
-      ? { badge: `<span class="turno-cont">${plural(lancadas, 'pessoa', 'pessoas')}</span>`, aviso: '' }
-      : { badge: '', aviso: '' };
-  }
-  if (lancadas === necessarias) return { badge: `<span class="turno-cont completo">${lancadas}/${necessarias}</span>`, aviso: '' };
-  if (lancadas < necessarias) {
-    return {
-      badge: `<span class="turno-cont incompleto">${lancadas}/${necessarias}</span>`,
-      aviso: `Pode estar faltando ${plural(necessarias - lancadas, 'pessoa', 'pessoas')}`
-    };
-  }
-  return {
-    badge: `<span class="turno-cont sobra">${lancadas}/${necessarias}</span>`,
-    aviso: `Pode estar sobrando ${plural(lancadas - necessarias, 'pessoa', 'pessoas')}`
-  };
+// Quantas pessoas eram esperadas (vagas configuradas, descontando dispensa
+// por folga de supervisor) e quantas foram lançadas de fato (inclui vagas
+// extras, lançadas além da quantidade configurada) num turno, num dia —
+// e as próprias vagas prontas pra desenhar na tela.
+function contagemTurnoDia(iso, dow, t) {
+  const n = vagasNoDia(t, dow);
+  const situacao = situacaoVagas(iso, t, dow);
+  const aplicaveis = situacao.filter((v) => !v.dispensada);
+  const necessarias = aplicaveis.length;
+
+  // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
+  // configurado. As vagas extras (índice >= n) aparecem como vagas normais,
+  // e sempre sobra uma em branco no fim para quem quiser lançar mais uma.
+  const salvas = vagasSalvas(iso, t.id);
+  const { faltou, marcas } = marcasDoTurno(iso, t.id);
+  const extrasFim = Math.max(n, salvas.length) + 1;
+  const extras = [];
+  for (let i = n; i < extrasFim; i++) extras.push({ i, v: montarVaga(t, salvas[i] || [], faltou, marcas) });
+
+  const pessoasDe = (v) => v.partes.filter((p) => p.nome).length;
+  const lancadas = aplicaveis.reduce((s, v) => s + pessoasDe(v), 0) + extras.reduce((s, x) => s + pessoasDe(x.v), 0);
+  const dispensado = necessarias === 0 && n > 0 && lancadas === 0;
+
+  return { t, n, situacao, extras, necessarias, lancadas, dispensado };
+}
+
+// Estado de um turno num dia: "completo" (bateu a conta, ou a diferença já
+// foi aprovada), "pendente" (sobrou ou faltou gente e ainda não foi
+// aprovado) ou "neutro" (nada configurado pra comparar). Não trava nada —
+// é só pra avisar e, se for o caso, esperar aprovação.
+function situacaoTurno({ necessarias, lancadas, dispensado }, aprovado) {
+  if (dispensado) return { status: 'completo', texto: 'Dispensado' };
+  if (!necessarias) return { status: 'neutro', texto: lancadas ? plural(lancadas, 'pessoa lançada', 'pessoas lançadas') : '' };
+  if (lancadas === necessarias) return { status: 'completo', texto: 'Completo' };
+  const diff = lancadas - necessarias;
+  const palavra = diff > 0 ? `Sobram ${plural(diff, 'pessoa', 'pessoas')}` : `Faltam ${plural(-diff, 'pessoa', 'pessoas')}`;
+  if (aprovado) return { status: 'completo', texto: 'Completo' };
+  return { status: 'pendente', texto: palavra };
+}
+
+function htmlContTurno(info, aprovado) {
+  const { necessarias, lancadas } = info;
+  const { status, texto } = situacaoTurno(info, aprovado);
+  if (status === 'neutro') return { status, badge: lancadas ? `<span class="turno-cont">${texto}</span>` : '', aviso: '' };
+  if (info.dispensado) return { status, badge: '<span class="turno-cont completo">Dispensado</span>', aviso: '' };
+  const badge = `<span class="turno-cont ${status}">${lancadas}/${necessarias}</span>`;
+  const aviso = status === 'pendente' ? `${texto} — aguardando sua aprovação` : '';
+  return { status, badge, aviso };
 }
 
 function htmlDia(d) {
@@ -503,40 +535,20 @@ function htmlDia(d) {
   const rotDia = `${DIAS_LONGO[dow]} ${d.getDate()}`;
 
   return turnos.map((t) => {
-    const n = vagasNoDia(t, dow);
-    const situacao = situacaoVagas(iso, t, dow);
-    const aplicaveis = situacao.filter((v) => !v.dispensada);
-    const necessarias = aplicaveis.length;
-
-    // Sem engessamento: quem lidera pode lançar mais ou menos gente do que o
-    // configurado. As vagas extras (índice >= n) aparecem como vagas normais,
-    // e sempre sobra uma em branco no fim para quem quiser lançar mais uma.
-    const salvas = vagasSalvas(iso, t.id);
-    const { faltou, marcas } = marcasDoTurno(iso, t.id);
-    const extrasFim = Math.max(n, salvas.length) + 1;
-    const extras = [];
-    for (let i = n; i < extrasFim; i++) extras.push({ i, v: montarVaga(t, salvas[i] || [], faltou, marcas) });
-
-    const pessoasDe = (v) => v.partes.filter((p) => p.nome).length;
-    const lancadas = aplicaveis.reduce((s, v) => s + pessoasDe(v), 0) + extras.reduce((s, x) => s + pessoasDe(x.v), 0);
+    const info = contagemTurnoDia(iso, dow, t);
+    const { situacao, extras } = info;
+    const { badge: cont, aviso, status } = htmlContTurno(info, turnoAprovado(iso, t.id));
 
     const htmlVagas = situacao.map((v, i) => htmlVaga(iso, t, i, v, ind, travado, rotDia)).join('')
       + extras.map((x) => htmlVaga(iso, t, x.i, x.v, ind, travado, rotDia, true)).join('');
 
-    const { badge: cont, aviso: avisoBruto } = necessarias === 0 && n > 0 && lancadas === 0
-      ? { badge: '<span class="turno-cont completo">Dispensado</span>', aviso: '' }
-      : htmlContTurno(necessarias, lancadas);
-    // Semana já validada: o selo continua mostrando a conta, mas o aviso
-    // de "pode estar faltando/sobrando" some — alguém já revisou isso.
-    const aviso = semanaAprovada(iso) ? '' : avisoBruto;
-
-    return `<section class="turno faixa-${faixaDoDia(t.inicio)}">
+    return `<section class="turno faixa-${faixaDoDia(t.inicio)}${status === 'pendente' ? ' turno-pendente' : ''}">
       <header class="turno-cab">
         <span class="turno-nome">${escapeHtml(t.nome)}</span>
         <span class="turno-hora">${t.inicio}–${t.fim}</span>
         ${cont}
       </header>
-      ${aviso ? `<p class="turno-aviso ${lancadas < necessarias ? 'falta' : 'sobra'}">${escapeHtml(aviso)}</p>` : ''}
+      ${aviso ? `<p class="turno-aviso">${escapeHtml(aviso)}</p>` : ''}
       <div class="vagas">${htmlVagas}</div>
       ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
@@ -586,70 +598,97 @@ function classesDia(base, iso, hoje, marcos, c) {
     .filter(Boolean).join(' ');
 }
 
+// Cartão compacto de um turno num dia, pro quadro-resumo da semana: número
+// grande (lançadas/necessárias), palavra de status e barrinha colorida.
+// Clicar abre o dia pra lançar/revisar de verdade.
+function htmlCartaoTurno(iso, info) {
+  const { status, texto } = situacaoTurno(info, turnoAprovado(iso, info.t.id));
+  const rotulo = `${info.t.nome}: ${texto || 'sem vagas configuradas'}`;
+  if (status === 'neutro' && !info.necessarias) {
+    return `<button type="button" class="cartao-turno neutro" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
+      <span class="ct-num">${info.lancadas || '—'}</span>
+      <span class="ct-texto">${escapeHtml(texto || 'sem vaga')}</span>
+    </button>`;
+  }
+  return `<button type="button" class="cartao-turno ${status}" data-abrir="${iso}" aria-label="${escapeHtml(rotulo)}">
+    <span class="ct-num">${info.lancadas}/${info.necessarias}</span>
+    <span class="ct-texto">${escapeHtml(texto)}</span>
+    <span class="ct-barra" aria-hidden="true"></span>
+  </button>`;
+}
+
 function renderSemana() {
   const { ini, fim } = faixaPeriodo();
   const hoje = hojeIso();
-  const tot = totalZerado();
-  const bannerAprovada = semanaAprovada(isoDate(ini))
-    ? ' <span class="pilula pilula-aprovada">✓ Semana validada</span>' : '';
+  const turnos = ordenaTurnos(turnosDoHub());
   const dias = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(ini, i);
-    const iso = isoDate(d);
-    const c = contagemDia(d);
-    somar(tot, c, iso >= hoje);
-    return { d, iso, c, marcos: marcosDoDia(iso, estado.cfg.datasEspeciais) };
+    return { d, iso: isoDate(d), marcos: marcosDoDia(isoDate(d), estado.cfg.datasEspeciais) };
   });
+  const infos = dias.map(({ d, iso }) => turnos.map((t) => contagemTurnoDia(iso, d.getDay(), t)));
+
+  let necessarias = 0, lancadas = 0, pendentes = 0;
+  infos.forEach((linha, i) => linha.forEach((info) => {
+    necessarias += info.necessarias;
+    lancadas += Math.min(info.lancadas, info.necessarias || info.lancadas);
+    if (situacaoTurno(info, turnoAprovado(dias[i].iso, info.t.id)).status === 'pendente') pendentes++;
+  }));
+  const resumoPct = necessarias ? Math.round((lancadas / necessarias) * 100) : 100;
+  const pilPendentes = pendentes
+    ? ` <span class="pilula pilula-furo">${plural(pendentes, 'turno aguardando aprovação', 'turnos aguardando aprovação')}</span>` : '';
 
   if (TELA_COMPACTA.matches) {
     // Celular: faixa com os 7 dias e um dia aberto por vez
     if (!dias.some((x) => x.iso === estado.diaSel)) {
       estado.diaSel = dias.some((x) => x.iso === hoje) ? hoje : dias[0].iso;
     }
-    const faixa = dias.map(({ d, iso, c, marcos }) => {
+    const faixa = dias.map(({ d, iso, marcos }, i) => {
       const sel = iso === estado.diaSel;
-      const marca = !c.total ? '' : c.descobertas
-        ? `<span class="cd-marca furo">${c.descobertas}</span>`
-        : '<span class="cd-marca ok" aria-hidden="true">✓</span>';
-      const rot = [`${DIAS_LONGO[d.getDay()]} ${d.getDate()}`, marcos[0] ? marcos[0].nome : '',
-        c.total ? (c.descobertas ? plural(c.descobertas, 'vaga descoberta', 'vagas descobertas') : 'completo') : 'sem turnos']
-        .filter(Boolean).join(', ');
-      return `<button type="button" role="tab" class="${classesDia('chip-dia', iso, hoje, marcos, c)}${sel ? ' sel' : ''}"
-        data-dia="${iso}" aria-selected="${sel}" aria-label="${escapeHtml(rot)}">
+      const linha = infos[i];
+      const temPendente = linha.some((info) => situacaoTurno(info, turnoAprovado(iso, info.t.id)).status === 'pendente');
+      const marca = !linha.some((x) => x.necessarias) ? ''
+        : temPendente ? '<span class="cd-marca furo">!</span>' : '<span class="cd-marca ok" aria-hidden="true">✓</span>';
+      const cls = ['chip-dia', iso === hoje ? 'hoje' : '', iso < hoje ? 'passado' : '',
+        sel ? 'sel' : '', marcos.length ? `tem-${tipoPrincipal(marcos)}` : ''].filter(Boolean).join(' ');
+      return `<button type="button" role="tab" class="${cls}" data-dia="${iso}" aria-selected="${sel}">
         <span class="cd-sem">${iso === hoje ? 'Hoje' : DIAS_CURTO[d.getDay()]}</span>
         <span class="cd-num">${d.getDate()}</span>
         ${marca}
       </button>`;
     }).join('');
-    const x = dias.find((y) => y.iso === estado.diaSel);
+    const i = dias.findIndex((y) => y.iso === estado.diaSel);
+    const x = dias[i];
     el.quadro.className = 'quadro-dia';
     el.quadro.innerHTML = `<div class="faixa-dias" role="tablist" aria-label="Dias da semana">${faixa}</div>
-      <article class="${classesDia('dia dia-unico', x.iso, hoje, x.marcos, x.c)}">
+      <article class="dia dia-unico${x.iso === hoje ? ' hoje' : ''}">
         <header class="dia-cab">
           <h2 class="dia-titulo">${DIAS_LONGO[x.d.getDay()]}, ${x.d.getDate()} de ${MESES[x.d.getMonth()]}</h2>
-          ${x.c.total ? `<span class="dia-cont">${htmlContDia(x.c)}</span>` : ''}
         </header>
         ${htmlMarcos(x.marcos)}
-        ${x.c.total ? medidor(x.c) : ''}
-        <div class="dia-corpo">${htmlDia(x.d)}</div>
+        <div class="cartoes-turno-pilha">${infos[i].map((info) => htmlCartaoTurno(x.iso, info)).join('')}</div>
+        <button type="button" class="btn-primario btn-lancar" data-abrir="${x.iso}">Lançar escala deste dia</button>
       </article>`;
   } else {
-    el.quadro.className = 'quadro-semana';
-    el.quadro.innerHTML = dias.map(({ d, iso, c, marcos }) => `
-      <article class="${classesDia('dia', iso, hoje, marcos, c)}">
-        <header class="dia-cab">
-          <span class="dia-num">${d.getDate()}</span>
-          <span class="dia-info">
-            <span class="dia-sem">${DIAS_CURTO[d.getDay()]}${iso === hoje ? ', hoje' : ''}</span>
-            ${c.total ? `<span class="dia-cont">${htmlContDia(c)}</span>` : ''}
-          </span>
-        </header>
-        ${htmlMarcos(marcos)}
-        ${c.total ? medidor(c) : ''}
-        <div class="dia-corpo">${htmlDia(d)}</div>
-      </article>`).join('');
+    el.quadro.className = 'quadro-semana-cartoes';
+    const cabecalho = `<div class="cs-linha cs-cab">
+      <span class="cs-rotulo" aria-hidden="true"></span>
+      ${dias.map(({ d, iso }) => `<button type="button" class="cs-dia-cab${iso === hoje ? ' hoje' : ''}" data-abrir="${iso}">
+        <span class="cs-dia-sem">${DIAS_CURTO[d.getDay()]}</span><span class="cs-dia-num">${d.getDate()}</span>
+      </button>`).join('')}
+    </div>`;
+    const linhas = turnos.map((t, ti) => `<div class="cs-linha">
+      <span class="cs-rotulo">
+        <span class="cs-rotulo-nome">${escapeHtml(t.nome)}</span>
+        <span class="cs-rotulo-hora">${t.inicio}–${t.fim}</span>
+      </span>
+      ${dias.map(({ iso }, di) => htmlCartaoTurno(iso, infos[di][ti])).join('')}
+    </div>`).join('');
+    el.quadro.innerHTML = turnos.length ? cabecalho + linhas : '<p class="dia-vazio">Sem turnos cadastrados neste hub</p>';
   }
   el.titulo.textContent = tituloSemana(ini, fim);
-  el.resumo.innerHTML = htmlResumo(tot, hoje >= isoDate(ini) && hoje <= isoDate(fim)) + bannerAprovada;
+  el.resumo.innerHTML = `<span class="progresso"><span class="prog-barra" aria-hidden="true"><span style="width:${resumoPct}%"></span></span>
+    <span><strong>${resumoPct}%</strong> da escala da semana preenchida</span></span>
+    <span class="resumo-vagas">${lancadas} de ${necessarias} vagas necessárias cobertas</span>${pilPendentes}`;
 }
 
 // Quem está escalado em cada turno, para a visão mensal.
@@ -750,7 +789,6 @@ function renderDialogo() {
   el.dlgTitulo.textContent = `${DIAS_LONGO[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
   el.dlgCorpo.innerHTML = `${htmlMarcos(marcos)}
     ${c.total ? `<p class="dlg-resumo">${htmlContDia(c)}</p>` : ''}
-    ${semanaAprovada(estado.diaAberto) ? '<p class="dlg-aprovada"><span class="pilula pilula-aprovada">✓ Semana validada</span></p>' : ''}
     ${htmlDia(d)}`;
 }
 

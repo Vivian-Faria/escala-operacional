@@ -26,9 +26,9 @@ service cloud.firestore {
       allow delete: if ehAdmin();
     }
 
-    // Validação semanal da escala por hub: todos leem (pra esconder os
-    // avisos de quantidade na tela de lançamento), só o administrador
-    // aprova ou reabre uma semana.
+    // Validação de lançamentos (por dia + turno, por hub): todos leem (pra
+    // mostrar o selo verde/vermelho na tela de lançamento), só o
+    // administrador aprova ou reabre um lançamento.
     match /aprovacoes/{docId} {
       allow read: if true;
       allow write: if ehAdmin();

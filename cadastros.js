@@ -1,14 +1,14 @@
 // Página 1 — Cadastros: hubs, turnos com vagas por dia, supervisores, colaboradores, datas especiais e buracos na escala.
 import {
   configuracaoPronta, lerConfig, salvarConfig, ouvirEscalas, lerEscalas, salvarVagasEmLote,
-  ouvirAprovacoes, aprovarSemana, reabrirSemana
+  ouvirAprovacoes, aprovarLancamento, reabrirLancamento
 } from './db.js';
 import { entrar, sair, aoMudarLogin, tokenAdmin } from './auth.js';
 import { datasDoAno, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, uid, escapeHtml, porNome, limparNome, normalizaNome,
   ordenaTurnos, faixaDoDia, vagasSemana, plural, parseIso, isoDate, addDays, startOfWeek,
-  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, agregarBuracos, hhmm, nomeParecido
+  capitalizar, vagasDe, horas, criarStatus, vagasDoTurno, contagemTurno, agregarBuracos, hhmm, nomeParecido
 } from './utils.js';
 
 const $ = (s) => document.querySelector(s);
@@ -603,18 +603,18 @@ function tituloPeriodoBuracos() {
     : `${a} de ${MESES[ini.getMonth()]} a ${b} de ${MESES[fim.getMonth()]}`;
 }
 
-// Validação da semana: só faz sentido com um hub específico escolhido (a
-// aprovação é por hub). Troca a escuta sempre que o hub filtrado muda.
+// Aprovações de lançamento (por dia+turno): só fazem sentido com um hub
+// específico escolhido. Troca a escuta sempre que o hub filtrado muda.
 function assinarAprovacoes() {
   if (buracosEstado.hubId === buracosEstado.hubAprovacoes) return;
   buracosEstado.hubAprovacoes = buracosEstado.hubId;
   buracosEstado.cancelarAprovacoes?.();
   buracosEstado.aprovacoes = {};
   if (!buracosEstado.hubId) { buracosEstado.cancelarAprovacoes = null; return; }
-  buracosEstado.cancelarAprovacoes = ouvirAprovacoes(buracosEstado.hubId, (semanas) => {
-    buracosEstado.aprovacoes = semanas;
+  buracosEstado.cancelarAprovacoes = ouvirAprovacoes(buracosEstado.hubId, (aprovacoes) => {
+    buracosEstado.aprovacoes = aprovacoes;
     renderBuracos();
-  }, () => mostrarStatus('Não foi possível carregar as validações da semana.', 'erro', true));
+  }, () => mostrarStatus('Não foi possível carregar as aprovações de lançamento.', 'erro', true));
 }
 
 function assinarBuracos() {
@@ -707,23 +707,45 @@ function htmlListaBuracos() {
   return `<p class="resumo-buracos">${plural(totalTrechos, 'trecho aberto', 'trechos abertos')} no período, somando ${horas(totalMinutos)} de vagas descobertas.</p>${corpo}`;
 }
 
-// Validação manual de uma semana (por hub): registra que alguém revisou os
-// lançamentos. Não trava nada — só esconde os avisos de quantidade na
-// escala pra essa semana desse hub, até alguém reabrir.
-function htmlValidacaoSemana() {
-  if (buracosEstado.modo !== 'semana' || !buracosEstado.hubId) return '';
-  const isoSemana = isoDate(startOfWeek(buracosEstado.ref));
-  const aprovacao = buracosEstado.aprovacoes[isoSemana];
-  if (aprovacao) {
-    const quando = aprovacao.aprovadoEm?.toDate ? aprovacao.aprovadoEm.toDate().toLocaleDateString('pt-BR') : '';
-    return `<div class="validacao-semana aprovada">
-      <p>✓ Semana validada${quando ? ` em ${quando}` : ''}${aprovacao.aprovadoPor ? ` por ${escapeHtml(aprovacao.aprovadoPor)}` : ''} — os avisos de quantidade ficam escondidos na escala para essa semana.</p>
-      <button type="button" class="btn-texto" data-acao="semana-reabrir">Reabrir semana</button>
-    </div>`;
+// Pendências de aprovação: turnos onde a quantidade lançada não bateu com
+// a configurada, no período/hub filtrado, ainda sem aprovação. Só existe
+// com um hub específico escolhido (a aprovação é por hub).
+function pendencias() {
+  if (!buracosEstado.hubId) return [];
+  const { ini, fim } = faixaBuracos();
+  const turnos = ordenaTurnos(cfg.turnos.filter((t) => t.hubId === buracosEstado.hubId));
+  const linhas = [];
+  for (let d = new Date(ini); d <= fim; d = addDays(d, 1)) {
+    const iso = isoDate(d);
+    const dow = d.getDay();
+    for (const t of turnos) {
+      if (!Number(t.vagas?.[dow])) continue;
+      const { necessarias, lancadas } = contagemTurno(cfg, buracosEstado.escalas, buracosEstado.hubId, t, iso, dow);
+      if (!necessarias || lancadas === necessarias) continue;
+      if (buracosEstado.aprovacoes[`${iso}_${t.id}`]) continue;
+      linhas.push({ d: new Date(d), iso, t, necessarias, lancadas });
+    }
   }
-  return `<div class="validacao-semana">
-    <p>Já revisou os lançamentos dessa semana? Validar esconde os avisos de "pode estar faltando/sobrando" na tela de lançamento, só pra essa semana desse hub.</p>
-    <button type="button" class="btn-secundario" data-acao="semana-validar">Validar esta semana</button>
+  return linhas;
+}
+
+function htmlPendencias() {
+  if (!buracosEstado.hubId) return '';
+  const linhas = pendencias();
+  if (!linhas.length) return `<div class="validacao-semana aprovada"><p>✓ Nenhuma pendência de aprovação no período.</p></div>`;
+  return `<div class="pendencias">
+    <p class="pendencias-titulo">${plural(linhas.length, 'turno aguardando aprovação', 'turnos aguardando aprovação')} no período</p>
+    ${linhas.map(({ d, iso, t, necessarias, lancadas }) => {
+      const diff = lancadas - necessarias;
+      const texto = diff > 0 ? `sobram ${plural(diff, 'pessoa', 'pessoas')}` : `faltam ${plural(-diff, 'pessoa', 'pessoas')}`;
+      return `<div class="pendencia">
+        <span class="pendencia-info">
+          <strong>${capitalizar(DIAS_LONGO[d.getDay()])}, ${d.getDate()} de ${MESES[d.getMonth()]}</strong>
+          · ${escapeHtml(t.nome)} · <span class="pendencia-conta">${lancadas}/${necessarias}</span> (${texto})
+        </span>
+        <button type="button" class="btn-secundario" data-acao="aprovar-lancamento" data-iso="${iso}" data-turno="${t.id}">Aprovar</button>
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -755,7 +777,7 @@ function renderBuracos() {
         </div>
       </div>
     </div>
-    ${htmlValidacaoSemana()}
+    ${htmlPendencias()}
     <div id="buracosLista">${htmlListaBuracos()}</div>`;
 }
 
@@ -1202,18 +1224,10 @@ el.conteudo.addEventListener('click', (e) => {
         .catch(() => mostrarStatus('Não foi possível copiar. Tente selecionar e copiar manualmente.', 'erro', true));
       return;
     }
-    case 'semana-validar': {
-      const isoSemana = isoDate(startOfWeek(buracosEstado.ref));
-      aprovarSemana(buracosEstado.hubId, isoSemana, usuarioAtual?.email || 'admin')
-        .then(() => mostrarStatus('Semana validada.'))
-        .catch(() => mostrarStatus('Não foi possível validar a semana.', 'erro', true));
-      return;
-    }
-    case 'semana-reabrir': {
-      const isoSemana = isoDate(startOfWeek(buracosEstado.ref));
-      reabrirSemana(buracosEstado.hubId, isoSemana)
-        .then(() => mostrarStatus('Semana reaberta — os avisos voltam a aparecer.'))
-        .catch(() => mostrarStatus('Não foi possível reabrir a semana.', 'erro', true));
+    case 'aprovar-lancamento': {
+      aprovarLancamento(buracosEstado.hubId, b.dataset.iso, b.dataset.turno, usuarioAtual?.email || 'admin')
+        .then(() => mostrarStatus('Lançamento aprovado.'))
+        .catch(() => mostrarStatus('Não foi possível aprovar.', 'erro', true));
       return;
     }
     default:

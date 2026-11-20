@@ -273,6 +273,31 @@ export function vagasDoTurno(cfg, escalasMap, hubId, turno, iso, dow) {
   return vagas;
 }
 
+// Quantas pessoas eram esperadas (vagas configuradas, descontando dispensa
+// por folga de supervisor) e quantas foram lançadas de fato (inclui vagas
+// extras, lançadas além da quantidade configurada) num turno, num dia.
+// Mesma lógica de contagem que a tela de lançamento usa, só que sem montar
+// o HTML de cada vaga — pra uso em telas que só precisam do número.
+export function contagemTurno(cfg, escalasMap, hubId, turno, iso, dow) {
+  const doc = escalasMap[`${hubId}_${iso}`];
+  const salvas = vagasDe(doc?.slots?.[turno.id]);
+  const n = Number(turno.vagas?.[dow]) || 0;
+
+  const sobressalentes = new Set(
+    (cfg.colaboradores || []).filter((c) => c.papel === 'supervisor').map((c) => normalizaNome(c.nome))
+  );
+  const creditos = (doc?.folgas?.[turno.id] || []).filter((nome) => sobressalentes.has(normalizaNome(nome)));
+  let credito = creditos.length;
+  let necessarias = 0;
+  for (let i = 0; i < n; i++) {
+    const vazia = !(salvas[i] || []).length;
+    if (credito > 0 && vazia) { credito--; continue; }
+    necessarias++;
+  }
+  const lancadas = salvas.reduce((s, partes) => s + partes.filter((p) => p.nome).length, 0);
+  return { necessarias, lancadas };
+}
+
 // Junta os buracos de várias vagas do mesmo turno/dia num resumo por trecho
 // de horário: para cada janela de tempo, quantas vagas estão faltando ali.
 // Entrada: uma lista de listas de buracos (uma lista por vaga). Saída:
