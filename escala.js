@@ -372,23 +372,21 @@ function htmlContDia(c) {
 }
 
 // Linha enxuta: "Nome 08:00 às 17:00", com um lápis pra abrir a edição do
-// nome e do horário. Sem tipo de contrato, confirmação ou comparecimento —
-// decisão da Ví de tirar essa informação da tela.
-function htmlLinhaVaga(iso, t, i, pi, p, alertas, travado, rotDia, extra) {
+// nome e do horário. Sem tipo de contrato, confirmação, comparecimento ou
+// avisos de conflito — decisão da Ví de tirar essa informação da tela.
+function htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra) {
   const chave = `${iso}|${t.id}|${i}|${pi}`;
   const dis = travado ? 'disabled' : '';
   const temNome = Boolean(p.nome.trim());
   const rotulo = `${t.nome}, vaga ${i + 1}, ${rotDia}`;
   const quem = escapeHtml(p.nome) || (extra ? 'Pessoa extra' : 'Vaga livre');
   const inicio = p.inicio || t.inicio, fim = p.fim || t.fim;
-  const alertasHtml = alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('');
 
   if (estado.editandoParte !== chave) {
     return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}${temNome ? '' : ' vazia'}">
       <span class="lv-texto">${quem} <span class="lv-hora">${inicio} às ${fim}</span></span>
       <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Editar ${escapeHtml(rotulo)}" ${dis}>✎</button>
       ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
-      ${alertasHtml}
     </div>`;
   }
   return `<div class="linha-vaga editando">
@@ -409,7 +407,6 @@ function htmlLinhaVaga(iso, t, i, pi, p, alertas, travado, rotDia, extra) {
       <button type="button" class="btn-icone" data-concluir="${chave}" aria-label="Concluir edição">✓</button>
     </div>
     ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
-    ${alertasHtml}
   </div>`;
 }
 
@@ -418,7 +415,7 @@ function htmlVaga(iso, t, i, v, ind, travado, rotDia, extra) {
   const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', extra ? 'extra-nova' : ''].filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
   const corpo = partes.map((p, pi) =>
-    htmlLinhaVaga(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, extra)).join('');
+    htmlLinhaVaga(iso, t, i, pi, p, travado, rotDia, extra)).join('');
   return `<div class="${cls}">${corpo}</div>`;
 }
 
