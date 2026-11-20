@@ -508,38 +508,8 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
 .cel-cont { font-size: 11.5px; color: var(--grafite); }
 .cel.com-furo:not(.passado) .cel-cont { color: var(--furo-texto); font-weight: 700; }
 
-/* Nomes de quem está escalado (visão mensal) */
-.nomes { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; min-width: 0; }
-.nomes-turno {
-  display: flex; flex-direction: column; gap: 1px; min-width: 0;
-  padding-left: 6px; border-left: 3px solid var(--faixa-forte);
-}
-.nt-rot { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 10.5px; line-height: 1.2; }
-.nt-nome { font-weight: 800; color: var(--grafite); text-transform: uppercase; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nt-cont { flex: none; font-weight: 800; }
-.nt-cont.completo { color: var(--ok); }
-.nt-cont.incompleto { color: var(--furo); }
-.nt-lista { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.nt-lista > span {
-  font-size: 12px; line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.n-ok { font-weight: 600; }
-.n-ok.avulso { color: var(--grafite); font-weight: 500; }
-.n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
-.n-tag {
-  margin-left: 4px; padding: 0 4px; border-radius: 3px;
-  background: var(--papel); border: 1px solid var(--linha);
-  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
-}
-.n-furo { color: var(--furo); font-weight: 700; }
-.cel.passado .n-ok { color: var(--grafite); font-weight: 500; }
-.cel.passado .n-hora { margin-right: 4px; color: var(--grafite); font-size: 10.5px; font-weight: 700; }
-.n-tag { opacity: .7; }
-.cel.passado .n-furo { color: var(--furo-texto); font-weight: 600; }
-
-/* Um quadradinho por vaga (usado no celular) */
-.pontos { display: none; flex-wrap: wrap; gap: 4px 6px; margin-top: auto; }
+/* Um quadradinho por vaga: resumo visual do dia, sem nomes (abra o dia pra ver quem está escalado) */
+.pontos { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: auto; }
 .pontos-turno { display: flex; flex-wrap: wrap; gap: 2px; }
 .pontos i, .mes-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .p-ok { background: var(--ok); }
@@ -551,11 +521,6 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   font-size: 12.5px; color: var(--grafite); border-top: 1px solid var(--linha);
 }
 .mes-legenda i { margin-left: 8px; }
-.leg-pontos { display: none; }
-@media (max-width: 760px) {
-  .leg-nomes { display: none; }
-  .leg-pontos { display: inline; }
-}
 
 /* ---------- dia aberto (janela) ---------- */
 .dlg-dia {
@@ -675,8 +640,7 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   .cel-furo { min-width: 18px; height: 18px; padding: 0 4px; font-size: 11px; }
   .cel-ok { width: 18px; height: 18px; padding: 0; font-size: 0; background: var(--ok-fundo); }
   .cel-ok::after { content: "✓"; font-size: 12px; font-weight: 800; }
-  .cel-marco, .nomes { display: none; }
-  .pontos { display: flex; }
+  .cel-marco { display: none; }
   .cel.tem-feriado .cel-num, .cel.tem-facultativo .cel-num { color: var(--feriado); }
   .pontos { gap: 2px 3px; }
   .pontos i { width: 6px; height: 6px; border-radius: 1px; }

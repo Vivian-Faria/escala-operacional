@@ -699,41 +699,8 @@ function renderSemana() {
     <span class="resumo-vagas">${lancadas} de ${necessarias} vagas necessárias cobertas</span>${pilPendentes}`;
 }
 
-// Quem está escalado em cada turno, para a visão mensal.
-// Vaga descoberta aparece em vermelho, na posição em que está.
-function htmlEscalados(d) {
-  const iso = isoDate(d);
-  const dow = d.getDay();
-  const turnos = ordenaTurnos(turnosDoHub().filter((t) => vagasNoDia(t, dow) > 0));
-  if (!turnos.length) return '';
-  const soUmTurno = turnos.length === 1;
-  return `<span class="nomes">${turnos.map((t) => {
-    const todas = situacaoVagas(iso, t, dow);
-    const vagas = todas.filter((v) => !v.dispensada);
-    const nomes = vagas.flatMap((v) => v.partes.filter((p) => p.nome && !p.faltou).map((p) => {
-      const tag = p.tipo && p.tipo !== 'fixo' ? `<span class="n-tag">${TIPOS[p.tipo].curto}</span>` : '';
-      const hora = v.dividida
-        ? `<span class="n-hora">${faixaCurta(p.inicio || t.inicio, p.fim || t.fim)}</span>` : '';
-      return `<span class="n-ok${tag ? ' avulso' : ''}">${hora}${escapeHtml(p.nome)}${tag}</span>`;
-    })).join('');
-    const dispensas = todas.filter((v) => v.dispensada)
-      .map((v) => `<span class="n-dispensa">Folga ${escapeHtml(v.dispensada)}</span>`).join('');
-    const furos = vagas.filter((v) => !v.coberta).length;
-    const buracos = vagas.filter((v) => !v.coberta).flatMap((v) => v.buracos);
-    const cobertas = vagas.length - furos;
-    const fracao = vagas.length ? `${cobertas}/${vagas.length}` : 'Dispensado';
-    return `<span class="nomes-turno faixa-${faixaDoDia(t.inicio)}">
-      ${soUmTurno ? '' : `<span class="nt-rot"><span class="nt-nome">${escapeHtml(t.nome)}</span>
-        <span class="nt-cont ${furos ? 'incompleto' : 'completo'}">${fracao}</span></span>`}
-      <span class="nt-lista">${nomes}${dispensas}${furos ? `<span class="n-furo">${
-        buracos.length && buracos.length <= 2 && vagas.some((v) => v.dividida)
-          ? `Falta ${buracos.map(([a, b]) => faixaCurta(hhmm(a), hhmm(b))).join(' e ')}`
-          : plural(furos, 'descoberta', 'descobertas')}</span>` : ''}</span>
-    </span>`;
-  }).join('')}</span>`;
-}
-
-// Versão compacta para o celular: um quadradinho por vaga, agrupado por turno
+// Resumo visual por vaga, agrupado por turno: um quadradinho por vaga.
+// Os nomes e detalhes ficam só ao abrir o dia — o quadradinho do mês é só o resumo.
 function htmlPontos(d) {
   const iso = isoDate(d);
   const dow = d.getDay();
@@ -767,7 +734,6 @@ function renderMes() {
           : c.total ? '<span class="cel-ok" aria-hidden="true">Completo</span>' : ''}
       </span>
       ${marcos.length ? `<span class="cel-marco">${escapeHtml(marcos[0].nome)}</span>` : ''}
-      ${htmlEscalados(d)}
       ${htmlPontos(d)}
     </button>`;
   }
@@ -775,7 +741,7 @@ function renderMes() {
   el.quadro.innerHTML = `<div class="mes-sem" aria-hidden="true">${DIAS_CURTO.map((x) => `<span>${x}</span>`).join('')}</div>
     <div class="mes-grade">${celulas}</div>
     <p class="mes-legenda">
-      <span class="leg-nomes">Freelancers e intermitentes aparecem com etiqueta ao lado do nome. Toque num dia para lançar a escala.</span>
+      <span>Toque num dia para ver quem está escalado.</span>
       <span class="leg-pontos"><i class="p-ok"></i> Vaga coberta <i class="p-furo"></i> Vaga descoberta</span>
     </p>`;
   el.titulo.textContent = `${capitalizar(MESES[primeiro.getMonth()])} de ${primeiro.getFullYear()}`;
