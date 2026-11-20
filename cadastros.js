@@ -174,17 +174,10 @@ function limparCadastros() {
 }
 
 function validar() {
-  const hora = /^\d{2}:\d{2}$/;
   for (const h of cfg.hubs) if (!h.nome) return { aba: 'hubs', msg: 'Há um hub sem nome.' };
   for (const t of cfg.turnos) {
     const hub = hubNome(t.hubId);
     if (!t.nome) return { aba: 'turnos', hub: t.hubId, msg: `Há um turno sem nome no hub ${hub}.` };
-    if (!hora.test(t.inicio) || !hora.test(t.fim)) {
-      return { aba: 'turnos', hub: t.hubId, msg: `Preencha início e fim do turno ${t.nome} (${hub}).` };
-    }
-    if (t.inicio === t.fim) {
-      return { aba: 'turnos', hub: t.hubId, msg: `O turno ${t.nome} (${hub}) começa e termina no mesmo horário.` };
-    }
   }
   for (const s of cfg.supervisores) if (!s.nome) return { aba: 'supervisores', msg: 'Há um supervisor sem nome.' };
   // telefone: obrigatório para colaborador novo; quem já existia sem telefone continua salvando, mas fica com ⚠️ e não entra na escala
@@ -283,12 +276,8 @@ function renderHubs() {
 function linhaTurno(t) {
   const vagas = t.vagas || [0, 0, 0, 0, 0, 0, 0];
   const base = `data-tipo="turno" data-id="${t.id}"`;
-  return `<tr class="faixa-${faixaDoDia(t.inicio)}" data-linha="${t.id}">
+  return `<tr data-linha="${t.id}">
     <td class="col-nome"><input type="text" class="in-nome" placeholder="Nome, ex: Almoço" aria-label="Nome do turno" ${base} data-campo="nome" value="${escapeHtml(t.nome)}"></td>
-    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-      class="campo-hora" aria-label="Início" ${base} data-campo="inicio" value="${t.inicio}"></td>
-    <td><input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-      class="campo-hora" aria-label="Fim" ${base} data-campo="fim" value="${t.fim}"></td>
     <td class="col-todos"><input type="number" min="0" max="99" inputmode="numeric" placeholder="–" aria-label="Mesmo número de vagas em todos os dias" ${base} data-campo="todos"></td>
     ${vagas.map((v, i) => `<td><input type="number" min="0" max="99" inputmode="numeric" aria-label="Vagas ${DIAS_LONGO[i]}" ${base} data-campo="vaga" data-dia="${i}" value="${v}"></td>`).join('')}
     <td class="col-total" data-total="${t.id}">${vagasSemana(t)}</td>
@@ -314,7 +303,7 @@ function renderTurnos() {
     </div>
     ${turnos.length ? `<div class="tabela-rolagem"><table class="tabela-turnos">
       <thead><tr>
-        <th>Turno</th><th>Início</th><th>Fim</th><th class="col-todos">Todos</th>
+        <th>Turno</th><th class="col-todos">Todos</th>
         ${DIAS_CURTO.map((d) => `<th>${d}</th>`).join('')}
         <th>Semana</th><th><span class="sr">Ações</span></th>
       </tr></thead>
@@ -324,7 +313,7 @@ function renderTurnos() {
       <button type="button" class="btn-secundario" data-acao="adicionar-turno">Adicionar turno</button>
       <p class="item-meta" data-total-hub>${turnos.length ? `${totalHub(hubTurnos)} vagas por semana neste hub` : ''}</p>
     </div>
-    <p class="dica">Turnos que terminam depois da meia-noite (ex: 18:00 às 01:20) funcionam normalmente. Na coluna Todos, digite um número para repetir nos 7 dias.</p>`;
+    <p class="dica">Na coluna Todos, digite um número para repetir nos 7 dias.</p>`;
 }
 
 function atualizarTotais(t) {
