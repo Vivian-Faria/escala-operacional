@@ -1,8 +1,9 @@
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
 import {
   configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,
-  alternarConfirmacao, marcarComparecimento, removerComparecimento, ouvirAprovacoes
+  alternarConfirmacao, marcarComparecimento, removerComparecimento, ouvirAprovacoes, aprovarLancamento
 } from './db.js';
+import { entrar, sair, aoMudarLogin } from './auth.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
@@ -16,7 +17,9 @@ const el = {
   selSup: $('#selSupervisor'), selHub: $('#selHub'), aviso: $('#aviso'), painel: $('#painel'),
   quadro: $('#quadro'), titulo: $('#tituloPeriodo'), resumo: $('#resumoPeriodo'),
   dlg: $('#dlgDia'), dlgTitulo: $('#dlgTitulo'), dlgCorpo: $('#dlgCorpo'),
-  lembrete: $('#lembrete')
+  lembrete: $('#lembrete'),
+  btnAdmin: $('#btnAdmin'), dlgAdmin: $('#dlgAdmin'), formAdmin: $('#formAdmin'),
+  senhaAdmin: $('#senhaAdmin'), erroAdmin: $('#erroAdmin')
 };
 const mostrarStatus = criarStatus($('#status'));
 
@@ -53,7 +56,8 @@ const estado = {
   diaAberto: null,   // dia aberto na janela (visão mensal)
   diaSel: null,      // dia mostrado no celular (visão semanal)
   lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false },
-  aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: ''
+  aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: '',
+  souAdmin: false, emailAdmin: ''
 };
 
 function mostrarAviso(titulo, texto) {
@@ -548,7 +552,8 @@ function htmlDia(d) {
         <span class="turno-hora">${t.inicio}–${t.fim}</span>
         ${cont}
       </header>
-      ${aviso ? `<p class="turno-aviso">${escapeHtml(aviso)}</p>` : ''}
+      ${aviso ? `<p class="turno-aviso">${escapeHtml(aviso)}${status === 'pendente' && estado.souAdmin
+        ? ` <button type="button" class="btn-texto" data-aprovar="${iso}|${t.id}">Aprovar</button>` : ''}</p>` : ''}
       <div class="vagas">${htmlVagas}</div>
       ${htmlAusencias(iso, t, ind, travado, rotDia)}
     </section>`;
@@ -1076,6 +1081,52 @@ TELA_COMPACTA.addEventListener('change', () => render());
 
 $('#dlgFechar').addEventListener('click', () => el.dlg.close());
 el.dlg.addEventListener('close', () => { estado.diaAberto = null; });
+
+// ================= login da administradora (pra aprovar lançamentos aqui mesmo) =================
+function mensagemLoginAdmin(codigo) {
+  switch (codigo) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/invalid-login-credentials': return 'Senha incorreta.';
+    case 'auth/too-many-requests': return 'Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.';
+    case 'auth/network-request-failed': return 'Sem conexão com a internet.';
+    default: return `Não foi possível entrar (${codigo || 'erro desconhecido'}).`;
+  }
+}
+
+if (configuracaoPronta()) {
+  aoMudarLogin((usuario) => {
+    estado.souAdmin = Boolean(usuario);
+    estado.emailAdmin = usuario?.email || '';
+    el.btnAdmin.textContent = estado.souAdmin ? 'Sair (admin)' : 'Entrar como admin';
+    render();
+  });
+}
+
+el.btnAdmin.addEventListener('click', () => {
+  if (estado.souAdmin) { sair(); return; }
+  el.erroAdmin.textContent = '';
+  el.senhaAdmin.value = '';
+  el.dlgAdmin.showModal();
+  el.senhaAdmin.focus();
+});
+$('#dlgAdminFechar').addEventListener('click', () => el.dlgAdmin.close());
+el.dlgAdmin.addEventListener('click', (e) => { if (e.target === el.dlgAdmin) el.dlgAdmin.close(); });
+el.formAdmin.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  el.erroAdmin.textContent = '';
+  const btn = el.formAdmin.querySelector('button');
+  btn.disabled = true;
+  try {
+    await entrar(el.senhaAdmin.value);
+    el.senhaAdmin.value = '';
+    el.dlgAdmin.close();
+  } catch (err) {
+    el.erroAdmin.textContent = mensagemLoginAdmin(err?.code);
+  } finally {
+    btn.disabled = false;
+  }
+});
 el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(); });
 
 document.addEventListener('change', (e) => {
@@ -1140,6 +1191,9 @@ document.addEventListener('click', (e) => {
     estado.diaSel = ds.dia;
     render();
     document.querySelector('.dia-unico')?.scrollIntoView({ block: 'nearest' });
+  } else if (ds.aprovar) {
+    const [iso, turnoId] = ds.aprovar.split('|');
+    gravar(() => aprovarLancamento(estado.hubId, iso, turnoId, estado.emailAdmin || 'admin'), 'Lançamento aprovado');
   } else if (ds.abrir) {
     abrirDia(ds.abrir);
   } else if (ds.modo && ds.modo !== estado.modo) {

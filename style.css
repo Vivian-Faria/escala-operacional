@@ -617,6 +617,14 @@ button.cel:hover { background: rgba(255, 255, 255, .05); }
   box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
 }
 .dlg-dia::backdrop { background: rgba(5, 8, 18, .7); }
+.dlg-admin {
+  border: 0; padding: 0; border-radius: var(--raio-m);
+  width: min(360px, calc(100vw - 20px));
+  background: var(--superficie2); color: var(--tinta);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+}
+.dlg-admin::backdrop { background: rgba(5, 8, 18, .7); }
+.dlg-admin .dlg-corpo p { margin: 0; font-size: 13px; color: var(--grafite); }
 .dlg-cab {
   position: sticky; top: 0; z-index: 1;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
