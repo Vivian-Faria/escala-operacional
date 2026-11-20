@@ -500,7 +500,9 @@ function contagemTurnoDia(iso, dow, t) {
   }
   linhas.push({ i: extrasFim, v: montarVaga(t, [], faltou, marcas) });
 
-  const pessoasDe = (v) => v.partes.filter((p) => p.nome).length;
+  // Quem faltou não conta como cobertura — o horário continua descoberto,
+  // mesmo com o nome ainda lançado na vaga (é assim que a Central também conta).
+  const pessoasDe = (v) => v.partes.filter((p) => p.nome && !p.faltou).length;
   const lancadas = linhas.reduce((s, x) => s + (x.v.dispensada ? 0 : pessoasDe(x.v)), 0);
   const dispensado = necessarias === 0 && n > 0 && lancadas === 0;
 
