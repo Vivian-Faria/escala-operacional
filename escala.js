@@ -1,14 +1,14 @@
 // Página 2 — Escala: o supervisor escolhe seu nome e o hub e preenche as vagas.
 import {
   configuracaoPronta, ouvirConfig, ouvirEscalas, salvarVaga, lancarAusencia, removerAusencia,
-  alternarConfirmacao, marcarComparecimento, removerComparecimento, ouvirAprovacoes, aprovarLancamento
+  ouvirAprovacoes, aprovarLancamento
 } from './db.js';
 import { entrar, sair, aoMudarLogin } from './auth.js';
 import { marcosDoDia, ROTULO_TIPO } from './feriados.js';
 import {
   DIAS_CURTO, DIAS_LONGO, MESES, isoDate, parseIso, addDays, startOfWeek, capitalizar,
   ordenaTurnos, faixaDoDia, normalizaNome, limparNome, sobrepoe, escapeHtml, porNome,
-  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, textoBuraco, pedacos, hhmm, toMin, faixaCurta, horaCurta,
+  vagasDe, plural, criarStatus, TIPOS, cobertura, ehDividida, hhmm, toMin, faixaCurta, horaCurta,
   vagasDoTurno
 } from './utils.js';
 
@@ -57,7 +57,8 @@ const estado = {
   diaSel: null,      // dia mostrado no celular (visão semanal)
   lembrete: { cancelar: null, chaveFaixa: '', escalas: {}, prontas: false },
   aprovacoes: {}, cancelarAprovacoes: null, hubAprovacoes: '',
-  souAdmin: false, emailAdmin: ''
+  souAdmin: false, emailAdmin: '',
+  editandoParte: null   // chave "iso|turnoId|idx|pi" da linha aberta pra edição, ou null
 };
 
 function mostrarAviso(titulo, texto) {
@@ -370,69 +371,55 @@ function htmlContDia(c) {
   return `${fracao}<span class="selo selo-furo">${plural(c.descobertas, 'descoberta', 'descobertas')}</span>`;
 }
 
-function htmlParte(iso, t, i, pi, p, alertas, travado, rotDia, mostrarHoras, extra) {
+// Linha enxuta: "Nome 08:00 às 17:00", com um lápis pra abrir a edição do
+// nome e do horário. Sem tipo de contrato, confirmação ou comparecimento —
+// decisão da Ví de tirar essa informação da tela.
+function htmlLinhaVaga(iso, t, i, pi, p, alertas, travado, rotDia, extra) {
   const chave = `${iso}|${t.id}|${i}|${pi}`;
-  const temNome = Boolean(p.nome.trim());
   const dis = travado ? 'disabled' : '';
-  const rotulo = mostrarHoras ? `${t.nome}, vaga ${i + 1}, pessoa ${pi + 1}, ${rotDia}` : `${t.nome}, vaga ${i + 1}, ${rotDia}`;
-  const quem = escapeHtml(p.nome) || `pessoa ${pi + 1}`;
-  // Horário sempre editável por pessoa (não só quando a vaga é dividida):
-  // freelancer/intermitente muitas vezes não cobre o horário cheio do turno.
-  const horas = `
+  const temNome = Boolean(p.nome.trim());
+  const rotulo = `${t.nome}, vaga ${i + 1}, ${rotDia}`;
+  const quem = escapeHtml(p.nome) || (extra ? 'Pessoa extra' : 'Vaga livre');
+  const inicio = p.inicio || t.inicio, fim = p.fim || t.fim;
+  const alertasHtml = alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('');
+
+  if (estado.editandoParte !== chave) {
+    return `<div class="linha-vaga${p.faltou ? ' faltou' : ''}${temNome ? '' : ' vazia'}">
+      <span class="lv-texto">${quem} <span class="lv-hora">${inicio} às ${fim}</span></span>
+      <button type="button" class="btn-icone" data-editar="${chave}" aria-label="Editar ${escapeHtml(rotulo)}" ${dis}>✎</button>
+      ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
+      ${alertasHtml}
+    </div>`;
+  }
+  return `<div class="linha-vaga editando">
+    <div class="parte-nome">
+      <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
+        placeholder="${extra ? 'Pessoa extra' : 'Descoberta'}" aria-label="${escapeHtml(rotulo)}"
+        autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
+    </div>
     <div class="horas">
       <label class="hora"><span>Entra</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${p.inicio || t.inicio}" aria-label="Entrada de ${quem}"
+          class="campo-hora" value="${inicio}" aria-label="Entrada de ${quem}"
           data-hora="${chave}|inicio" data-foco="hi|${chave}" ${dis}></label>
       <label class="hora"><span>Sai</span>
         <input type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="00:00"
-          class="campo-hora" value="${p.fim || t.fim}" aria-label="Saída de ${quem}"
+          class="campo-hora" value="${fim}" aria-label="Saída de ${quem}"
           data-hora="${chave}|fim" data-foco="hf|${chave}" ${dis}></label>
-    </div>`;
-  const acoes = temNome ? `
-    <div class="tipo" role="group" aria-label="Tipo de contrato de ${escapeHtml(p.nome)}">
-      ${!p.faltou && !p.tipo ? '<span class="tipo-pergunta">Tipo:</span>' : ''}
-      ${Object.entries(TIPOS).map(([valor, tp]) => `<button type="button" data-tipo-vaga="${chave}" data-valor="${valor}"
-        aria-pressed="${p.tipo === valor}" aria-label="${valor === 'fixo' ? 'Fixo' : valor === 'freelancer' ? 'Freelancer' : 'Intermitente'}" ${dis}>${tp.botao}</button>`).join('')}
+      <button type="button" class="btn-icone" data-concluir="${chave}" aria-label="Concluir edição">✓</button>
     </div>
-    <div class="presenca" role="group" aria-label="Presença de ${escapeHtml(p.nome)}">
-      <button type="button" class="btn-confirmou" data-confirmou="${iso}|${t.id}" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.confirmou}" aria-label="Confirmou horário com ${escapeHtml(p.nome)}" title="Confirmou horário" ${dis}>${p.confirmou ? '✓ ' : ''}Confirmou</button>
-      <button type="button" class="btn-compareceu sim" data-compareceu="${iso}|${t.id}|sim" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.compareceuEstado === 'sim'}" aria-label="${escapeHtml(p.nome)} compareceu" title="Compareceu" ${dis}>${p.compareceuEstado === 'sim' ? '✓ ' : ''}Compareceu</button>
-      <button type="button" class="btn-compareceu nao" data-compareceu="${iso}|${t.id}|nao" data-nome="${escapeHtml(p.nome)}"
-        aria-pressed="${p.compareceuEstado === 'nao'}" aria-label="${escapeHtml(p.nome)} não compareceu" title="Não compareceu" ${dis}>${p.compareceuEstado === 'nao' ? '✕ ' : ''}Faltou</button>
-    </div>` : '';
-  const tudoOk = temNome && !p.faltou && p.confirmou && p.compareceuEstado === 'sim';
-  return `<div class="parte${p.faltou ? ' faltou' : ''}${tudoOk ? ' ok' : ''}">
-    <div class="parte-nome">
-      <input type="text" class="${p.nome ? '' : 'vazio'}" value="${escapeHtml(p.nome)}"
-        placeholder="${mostrarHoras ? 'Quem cobre' : (extra ? 'Pessoa extra' : 'Descoberta')}" aria-label="${escapeHtml(rotulo)}"
-        autocomplete="off" data-parte="${chave}" data-foco="v|${chave}" ${dis}>
-      ${mostrarHoras ? `<button type="button" class="btn-tirar" data-tirar-parte="${chave}"
-        aria-label="Tirar ${escapeHtml(p.nome) || 'esta pessoa'} da vaga" ${dis}>×</button>` : ''}
-    </div>
-    ${horas}
     ${p.faltou ? '<p class="vaga-furo">Não compareceu. O horário está descoberto.</p>' : ''}
-    ${acoes}
-    ${alertas.map((a) => `<p class="vaga-alerta">${escapeHtml(a)}</p>`).join('')}
+    ${alertasHtml}
   </div>`;
 }
 
 function htmlVaga(iso, t, i, v, ind, travado, rotDia, extra) {
-  const dis = travado ? 'disabled' : '';
   if (v.dispensada) return htmlVagaDispensada(iso, t, i, v, travado, rotDia);
-  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', v.dividida ? 'dividida' : '', extra ? 'extra-nova' : '']
-    .filter(Boolean).join(' ');
+  const cls = ['vaga', v.coberta ? 'ocupada' : 'descoberta', extra ? 'extra-nova' : ''].filter(Boolean).join(' ');
   const partes = v.partes.length ? v.partes : [{ nome: '', tipo: '', inicio: '', fim: '' }];
   const corpo = partes.map((p, pi) =>
-    htmlParte(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, v.dividida, extra)).join('');
-  const buracos = v.dividida && v.buracos.length && v.partes.some((p) => p.nome)
-    ? `<p class="vaga-buraco">Falta cobrir ${v.buracos.map(textoBuraco).join(' e ')}</p>` : '';
-  const rodape = v.dividida
-    ? `<button type="button" class="btn-dividir" data-add-parte="${iso}|${t.id}|${i}" ${dis}>+ pessoa</button>`
-    : `<button type="button" class="btn-dividir" data-dividir="${iso}|${t.id}|${i}" ${dis}>Dividir horário</button>`;
-  return `<div class="${cls}">${corpo}${buracos}${rodape}</div>`;
+    htmlLinhaVaga(iso, t, i, pi, p, alertasVaga(ind, t, i, pi, p), travado, rotDia, extra)).join('');
+  return `<div class="${cls}">${corpo}</div>`;
 }
 
 // Vaga sobressalente vazia por folga de supervisor: sem cobrança de furo,
@@ -958,9 +945,8 @@ async function salvarNome(input) {
       return;
     }
   }
-  // Pessoa nova no horário: o tipo precisa ser confirmado de novo
   alterarParte(iso, turnoId, Number(idx), Number(pi), { nome, tipo: '' },
-    nome ? 'Salvo. Confirme o tipo de contrato.' : 'Horário liberado');
+    nome ? 'Salvo' : 'Horário liberado');
 }
 
 function salvarHora(input) {
@@ -983,44 +969,6 @@ function salvarHora(input) {
     if (ant && (ant.fim || turno.fim) === antes) ant.fim = novo;
   }
   gravarPartes(iso, turnoId, Number(idx), partes, 'Horário salvo');
-}
-
-// Divide a vaga em dois trechos. Quem já estava fica no primeiro.
-function dividirVaga(iso, turnoId, idx) {
-  const turno = turnoPorId(turnoId);
-  const partes = partesAtuais(iso, turnoId, idx);
-  const [a, b] = pedacos(turno, 2);
-  const novas = [
-    { ...(partes[0] || { nome: '', tipo: '' }), inicio: a[0], fim: a[1] },
-    { nome: '', tipo: '', inicio: b[0], fim: b[1] }
-  ];
-  for (const extra of partes.slice(1)) novas.push({ ...extra, inicio: extra.inicio || b[0], fim: extra.fim || b[1] });
-  gravarPartes(iso, turnoId, idx, novas, 'Vaga dividida. Ajuste os horários e preencha os nomes.');
-}
-
-// Acrescenta uma pessoa começando no primeiro buraco que existir
-function adicionarParte(iso, turnoId, idx) {
-  const turno = turnoPorId(turnoId);
-  const partes = partesAtuais(iso, turnoId, idx);
-  const faltas = new Set(listaDoTurno(iso, 'faltas', turnoId).map(normalizaNome));
-  const { buracos } = cobertura(turno, partes, (n) => faltas.has(normalizaNome(n)));
-  const [ini, fim] = buracos[0] || [toMin(turno.inicio), toMin(turno.fim)];
-  partes.push({ nome: '', tipo: '', inicio: hhmm(ini), fim: hhmm(fim) });
-  gravarPartes(iso, turnoId, idx, partes, 'Horário adicionado');
-}
-
-function tirarParte(iso, turnoId, idx, pi) {
-  const partes = partesAtuais(iso, turnoId, idx);
-  partes.splice(pi, 1);
-  // Sobrando uma pessoa no turno inteiro, a vaga volta ao formato simples
-  if (partes.length === 1) {
-    const turno = turnoPorId(turnoId);
-    const p = partes[0];
-    if ((p.inicio || turno.inicio) === turno.inicio && (p.fim || turno.fim) === turno.fim) {
-      partes[0] = { nome: p.nome, tipo: p.tipo, inicio: '', fim: '' };
-    }
-  }
-  gravarPartes(iso, turnoId, idx, partes, 'Horário removido');
 }
 
 // Nome como já está gravado na lista (para retirar exatamente o mesmo texto)
@@ -1155,32 +1103,16 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   const ds = b.dataset;
-  if (ds.tipoVaga) {
-    const [iso, turnoId, idx, pi] = ds.tipoVaga.split('|');
-    alterarParte(iso, turnoId, Number(idx), Number(pi), { tipo: ds.valor }, `Marcado como ${TIPOS[ds.valor].plural[0]}`);
-  } else if (ds.dividir) {
-    const [iso, turnoId, idx] = ds.dividir.split('|');
-    dividirVaga(iso, turnoId, Number(idx));
-  } else if (ds.addParte) {
-    const [iso, turnoId, idx] = ds.addParte.split('|');
-    adicionarParte(iso, turnoId, Number(idx));
-  } else if (ds.tirarParte) {
-    const [iso, turnoId, idx, pi] = ds.tirarParte.split('|');
-    tirarParte(iso, turnoId, Number(idx), Number(pi));
-  } else if (ds.confirmou) {
-    const [iso, turnoId] = ds.confirmou.split('|');
-    const jaConfirmado = b.getAttribute('aria-pressed') === 'true';
-    gravar(() => alternarConfirmacao(estado.hubId, iso, turnoId, ds.nome, !jaConfirmado, nomeSupervisor()),
-      jaConfirmado ? 'Confirmação retirada' : `Horário confirmado com ${ds.nome}`);
-  } else if (ds.compareceu) {
-    const [iso, turnoId, valor] = ds.compareceu.split('|');
-    const jaMarcado = b.getAttribute('aria-pressed') === 'true';
-    if (jaMarcado) {
-      gravar(() => removerComparecimento(estado.hubId, iso, turnoId, ds.nome, nomeSupervisor()), 'Marcação retirada');
-    } else {
-      gravar(() => marcarComparecimento(estado.hubId, iso, turnoId, ds.nome, valor, nomeSupervisor()),
-        valor === 'sim' ? `${ds.nome} marcado como presente` : `${ds.nome} marcado como ausente`);
-    }
+  if (ds.editar) {
+    estado.editandoParte = ds.editar;
+    render();
+    document.querySelector(`[data-foco="v|${CSS.escape(ds.editar)}"]`)?.focus();
+  } else if (ds.concluir) {
+    estado.editandoParte = null;
+    render();
+  } else if (ds.aprovar) {
+    const [iso, turnoId] = ds.aprovar.split('|');
+    gravar(() => aprovarLancamento(estado.hubId, iso, turnoId, estado.emailAdmin || 'admin'), 'Lançamento aprovado');
   } else if (ds.lancar) {
     lancar(b.closest('.aus-add').querySelector('[data-aus]'), ds.lancar);
   } else if (ds.removerAus) {
@@ -1191,9 +1123,6 @@ document.addEventListener('click', (e) => {
     estado.diaSel = ds.dia;
     render();
     document.querySelector('.dia-unico')?.scrollIntoView({ block: 'nearest' });
-  } else if (ds.aprovar) {
-    const [iso, turnoId] = ds.aprovar.split('|');
-    gravar(() => aprovarLancamento(estado.hubId, iso, turnoId, estado.emailAdmin || 'admin'), 'Lançamento aprovado');
   } else if (ds.abrir) {
     abrirDia(ds.abrir);
   } else if (ds.modo && ds.modo !== estado.modo) {

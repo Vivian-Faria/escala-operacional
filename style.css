@@ -371,99 +371,33 @@ select:focus-visible {
 }
 .vaga.descoberta { border-color: var(--furo); background: var(--furo-fundo); }
 .passado .vaga.descoberta { border-style: dashed; }
-.vaga.dividida {
-  padding: 6px; border-radius: var(--raio-m);
-  background: var(--papel); border: 1px solid var(--linha);
-}
-.vaga.dividida.descoberta { border-color: var(--furo); background: var(--furo-fundo); }
 
-.parte { display: flex; flex-direction: column; gap: 4px; position: relative; }
-.vaga.dividida .parte + .parte { padding-top: 7px; border-top: 1px dashed var(--linha-forte); }
-/* Tudo certo com a pessoa (confirmou horário e compareceu): friso verde discreto */
-.parte.ok { box-shadow: inset 3px 0 0 var(--ok); padding-left: 6px; }
-.parte.faltou { box-shadow: inset 3px 0 0 var(--furo); padding-left: 6px; }
+/* Linha enxuta: "Nome 08:00 às 17:00" + lápis pra editar. */
+.linha-vaga { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.linha-vaga + .linha-vaga { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--linha-forte); }
+.lv-texto { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; }
+.lv-hora { margin-left: 4px; font-size: 12.5px; font-weight: 500; color: var(--grafite); font-variant-numeric: tabular-nums; }
+.vaga.descoberta .lv-texto { color: var(--furo-texto); }
+.linha-vaga.vazia .lv-texto { color: var(--grafite); font-weight: 500; font-style: italic; }
+.linha-vaga.faltou .lv-texto { text-decoration: line-through; color: var(--furo-texto); }
+
+.linha-vaga.editando { flex-direction: column; align-items: stretch; gap: 6px; }
 .parte-nome { display: flex; align-items: center; gap: 3px; }
 .parte-nome input[type=text] {
   flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 13.5px;
   border-radius: var(--raio-p); border: 1px solid var(--linha-forte);
 }
-.btn-tirar {
-  flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%;
-  background: none; color: var(--grafite); font-size: 16px; line-height: 1;
-}
-.btn-tirar:hover { background: var(--linha); color: var(--tinta); }
-
-/* Horário descoberto: vermelho forte, é o que o supervisor precisa ver primeiro */
-.vaga.descoberta .parte-nome input[type=text] {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 700;
-}
-.passado .vaga.descoberta .parte-nome input[type=text] { border-width: 1px; border-style: dashed; font-weight: 500; }
-.vaga.ocupada .parte-nome input[type=text] { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
-/* Dentro de uma vaga dividida, cada pessoa tem o seu próprio estado */
-.vaga.dividida .parte-nome input[type=text] { border: 1px solid var(--linha-forte); background-color: var(--superficie); font-weight: 600; }
-.vaga.dividida .parte-nome input[type=text].vazio {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo); color: var(--furo-texto); font-weight: 500;
-}
-
-/* Quem faltou: nome riscado e horário de volta para a fila */
-.parte.faltou .parte-nome input[type=text] {
-  background-color: var(--furo-fundo); border: 2px solid var(--furo);
-  color: var(--furo-texto); text-decoration: line-through; font-weight: 600;
-}
 .vaga-furo { margin: 0; font-size: 12px; font-weight: 700; color: var(--furo-texto); }
-.vaga-buraco {
-  margin: 0; padding: 3px 7px; border-radius: var(--raio-p);
-  background: var(--furo); color: var(--texto-contraste); font-size: 12px; font-weight: 700;
-}
-.passado .vaga-buraco { background: var(--furo-fundo); color: var(--furo-texto); }
 
-.horas { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.horas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .hora { display: flex; align-items: center; gap: 4px; flex: 1 1 120px; min-width: 0; }
 .hora > span { flex: none; color: var(--grafite); font-size: 11.5px; }
 .hora input[type=time], .hora input.campo-hora {
   flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 4px 2px 4px 5px; font-size: 12.5px;
   text-align: center; font-variant-numeric: tabular-nums; letter-spacing: .5px;
 }
-/* Nas colunas da semana o espaço é curto: entra e sai ficam um sobre o outro */
-.quadro-semana .horas { flex-direction: column; gap: 4px; }
-.quadro-semana .hora { flex: none; }
-.quadro-semana .hora > span { width: 32px; }
 
-.btn-dividir {
-  align-self: flex-start; padding: 3px 9px; min-height: 28px;
-  background: none; border: 1px dashed var(--linha-forte); border-radius: var(--raio-p);
-  color: var(--grafite); font-size: 12px; font-weight: 600;
-}
-.btn-dividir:hover { border-color: var(--tinta); border-style: solid; color: var(--tinta); }
-.vaga.ocupada:not(.dividida) .btn-dividir, .passado .btn-dividir { opacity: .55; }
-.vaga.ocupada:not(.dividida) .btn-dividir:hover { opacity: 1; }
-
-.vaga.conflito .parte-nome input[type=text] { box-shadow: inset 4px 0 0 var(--conflito); border-color: var(--conflito); }
 .vaga-alerta { margin: 0; font-size: 12px; line-height: 1.3; color: var(--conflito); font-weight: 600; }
-
-.tipo { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
-.tipo-pergunta { flex-basis: 100%; font-size: 10.5px; font-weight: 700; color: var(--grafite); text-transform: uppercase; letter-spacing: .03em; }
-.tipo button {
-  flex: 1 1 0; min-width: 0; min-height: 24px; padding: 2px 3px; font-size: 11.5px;
-  border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
-}
-.tipo button:hover { border-color: var(--tinta); }
-.tipo button[aria-pressed="true"] { background: var(--acento); border-color: var(--acento); color: var(--texto-contraste); font-weight: 650; }
-
-/* Confirmou numa linha, Compareceu/Faltou na linha debaixo — menos altura
-   que antes (texto mais curto), mas sem espremer as palavras a ponto de
-   cortar o texto */
-.presenca { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-.presenca button {
-  flex: 1 1 0; min-width: 0; min-height: 25px; padding: 2px 4px; font-size: 11.5px; font-weight: 650;
-  border: 1px solid var(--linha-forte); background: var(--superficie); border-radius: var(--raio-p);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.presenca button:hover { border-color: var(--tinta); }
-.presenca button.btn-confirmou { flex-basis: 100%; }
-.btn-confirmou[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--texto-contraste); }
-.btn-compareceu.sim[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: var(--texto-contraste); }
-.btn-compareceu.nao[aria-pressed="true"] { background: var(--furo); border-color: var(--furo); color: var(--texto-contraste); }
 
 .vaga.dispensada { gap: 4px; }
 .vaga-dispensa {
